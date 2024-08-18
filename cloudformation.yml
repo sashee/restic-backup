@@ -1,0 +1,216 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  ManagementAccountId:
+    Type: String
+    Description: "The account ID of the management account"
+  NotificationSNSTopicArn:
+    Type: String
+    Description: "The topic that will be notified when the user is disabled"
+Resources:
+  CloudTrailSNSTopic:
+    Type: AWS::SNS::Topic
+  SNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: !Ref ManagementAccountId
+          Action: sns:Publish
+          Resource: "*"
+      Topics:
+      - !Ref CloudTrailSNSTopic
+  Queue: 
+    Type: AWS::SQS::Queue
+  QueuePolicy: 
+    Type: AWS::SQS::QueuePolicy
+    Properties: 
+      Queues: 
+        - !Ref Queue
+      PolicyDocument: 
+        Statement: 
+          - Action: "sqs:SendMessage" 
+            Effect: "Allow"
+            Resource: !GetAtt Queue.Arn
+            Principal:  
+              Service: "sns.amazonaws.com"
+            Condition:
+              ArnEquals:
+                "aws:SourceArn": !Ref CloudTrailSNSTopic
+  SQSLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      RetentionInDays: 365
+  PipeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - pipes.amazonaws.com
+          Action:
+          - sts:AssumeRole
+          Condition:
+            StringEquals:
+              'aws:SourceArn': !Sub
+                - 'arn:${AWS::Partition}:pipes:${AWS::Region}:${AWS::AccountId}:pipe/${PipeName}'
+                - PipeName: !Select [2, !Split ['/', !Ref AWS::StackId]]
+      Policies:
+        - PolicyName: allow-logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - 'sqs:ReceiveMessage'
+              - 'sqs:DeleteMessage'
+              - 'sqs:GetQueueAttributes'
+              Resource: !GetAtt Queue.Arn
+            - Effect: Allow
+              Action:
+              - 'logs:PutLogEvents'
+              - 'logs:CreateLogStream'
+              Resource: !Sub "${SQSLogGroup.Arn}:*"
+  SQSToCloudWatchLogs:
+    Type: 'AWS::Pipes::Pipe'
+    Properties:
+      Name: !Select [2, !Split ['/', !Ref AWS::StackId]]
+      RoleArn: !GetAtt PipeRole.Arn
+      Source: !GetAtt Queue.Arn
+      Target: !GetAtt SQSLogGroup.Arn
+      TargetParameters:
+        InputTemplate: "<$.body.Message>"
+  QueueSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !GetAtt Queue.Arn
+      Protocol: sqs
+      TopicArn: !Ref CloudTrailSNSTopic
+      FilterPolicyScope: MessageBody
+      FilterPolicy:
+        "$or":
+          - errorCode:
+            - AccessDenied
+          - eventName:
+            - GetCallerIdentity
+        userIdentity:
+          arn:
+            - !GetAtt User.Arn
+  User:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+      - PolicyName: allow-s3
+        PolicyDocument:
+           Version: 2012-10-17
+           Statement:
+              - Effect: Allow
+                Action:
+                 - 's3:*'
+                Resource: '*'
+  LambdaLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      RetentionInDays: 365
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: allow-logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - 'logs:PutLogEvents'
+              - 'logs:CreateLogStream'
+              Resource: !Sub "${LambdaLogGroup.Arn}:*"
+            - Effect: Allow
+              Action:
+              - 'iam:AttachUserPolicy'
+              Resource: !GetAtt User.Arn
+              Condition:
+                StringEquals:
+                  "iam:PolicyARN": "arn:aws:iam::aws:policy/AWSDenyAll"
+            - Effect: Allow
+              Action:
+              - 'sns:Publish'
+              Resource: !Ref NotificationSNSTopicArn
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs20.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      ReservedConcurrentExecutions: 1
+      Timeout: 30
+      Code:
+        ZipFile: |
+          const {IAMClient, AttachUserPolicyCommand} = require("@aws-sdk/client-iam");
+          const {SNSClient, PublishCommand} = require("@aws-sdk/client-sns");
+
+          exports.handler = async (event) => {
+            await new IAMClient().send(new AttachUserPolicyCommand({
+              UserName: process.env.UserName,
+              PolicyArn: "arn:aws:iam::aws:policy/AWSDenyAll",
+            }));
+
+            const client = new SNSClient({region: process.env.NotificationSNSTopicArn.split(":")[3]});
+            await client.send(new PublishCommand({
+              Message: `User disabled. Check logs at https://${process.env.AWS_REGION}.console.aws.amazon.com/cloudwatch/home#logsV2:log-groups/log-group/${process.env.SQSLogGroup.replaceAll("/", "$252F")}/log-events`,
+              TopicArn: process.env.NotificationSNSTopicArn,
+            }));
+          };
+      LoggingConfig:
+        LogGroup: !Ref LambdaLogGroup
+        LogFormat: JSON
+      Environment:
+        Variables:
+          UserName: !Ref User
+          NotificationSNSTopicArn: !Ref NotificationSNSTopicArn
+          SQSLogGroup: !Ref SQSLogGroup
+  AccessDeniedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      Threshold: 0
+      Namespace: "AWS/SQS"
+      MetricName: "NumberOfMessagesSent"
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt Queue.QueueName
+      Statistic: Maximum
+      Period: 60
+      TreatMissingData: notBreaching
+      ActionsEnabled: true
+      AlarmActions:
+      - !GetAtt LambdaFunction.Arn
+  InvokeLambdaPermission: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "lambda.alarms.cloudwatch.amazonaws.com"
+      SourceArn: !GetAtt AccessDeniedAlarm.Arn
+Outputs:
+  CloudTrailSNSTopic:
+    Value: !GetAtt CloudTrailSNSTopic.TopicArn
+  Logs:
+    Value: !Sub
+      - "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home#logsV2:log-groups/log-group/${CloudTrailLogsEscaped}/log-events"
+      - CloudTrailLogsEscaped: !Join [ '$252F', !Split [ '/', !Ref SQSLogGroup ] ]
