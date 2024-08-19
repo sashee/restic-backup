@@ -7,6 +7,51 @@ Parameters:
     Type: String
     Description: "The topic that will be notified when the user is disabled"
 Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      LifecycleConfiguration:
+        Rules:
+          - Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 180
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 180
+          - Status: Enabled
+            Prefix: "data/"
+            ObjectSizeGreaterThan: 1048576
+            Transitions:
+              - StorageClass: INTELLIGENT_TIERING
+                TransitionInDays: 0
+            NoncurrentVersionTransitions:
+              - StorageClass: DEEP_ARCHIVE
+                TransitionInDays: 0
+      VersioningConfiguration:
+        Status: Enabled
+  User:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+      - PolicyName: backup
+        PolicyDocument:
+           Version: 2012-10-17
+           Statement:
+              - Effect: Allow
+                Action:
+                 - 's3:ListBucket'
+                 - 's3:GetBucketLocation'
+                Resource: !GetAtt Bucket.Arn
+              - Effect: Allow
+                Action:
+                 - 's3:GetObject'
+                 - 's3:PutObject'
+                 - 's3:DeleteObject'
+                Resource: !Sub "${Bucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                - 'lambda:InvokeFunctionUrl'
+                Resource: !GetAtt MonitoringLambdaUrl.FunctionArn
+# access denied disabler
   CloudTrailSNSTopic:
     Type: AWS::SNS::Topic
   SNSTopicPolicy:
@@ -101,23 +146,11 @@ Resources:
         userIdentity:
           arn:
             - !GetAtt User.Arn
-  User:
-    Type: AWS::IAM::User
-    Properties:
-      Policies:
-      - PolicyName: allow-s3
-        PolicyDocument:
-           Version: 2012-10-17
-           Statement:
-              - Effect: Allow
-                Action:
-                 - 's3:*'
-                Resource: '*'
-  LambdaLogGroup: 
+  DisablerLambdaLogGroup: 
     Type: AWS::Logs::LogGroup
     Properties: 
       RetentionInDays: 365
-  LambdaExecutionRole:
+  DisablerLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -138,7 +171,7 @@ Resources:
               Action:
               - 'logs:PutLogEvents'
               - 'logs:CreateLogStream'
-              Resource: !Sub "${LambdaLogGroup.Arn}:*"
+              Resource: !Sub "${DisablerLambdaLogGroup.Arn}:*"
             - Effect: Allow
               Action:
               - 'iam:AttachUserPolicy'
@@ -150,11 +183,11 @@ Resources:
               Action:
               - 'sns:Publish'
               Resource: !Ref NotificationSNSTopicArn
-  LambdaFunction:
+  DisablerLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       Runtime: nodejs20.x
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt DisablerLambdaExecutionRole.Arn
       Handler: index.handler
       ReservedConcurrentExecutions: 1
       Timeout: 30
@@ -176,7 +209,7 @@ Resources:
             }));
           };
       LoggingConfig:
-        LogGroup: !Ref LambdaLogGroup
+        LogGroup: !Ref DisablerLambdaLogGroup
         LogFormat: JSON
       Environment:
         Variables:
@@ -199,18 +232,230 @@ Resources:
       TreatMissingData: notBreaching
       ActionsEnabled: true
       AlarmActions:
-      - !GetAtt LambdaFunction.Arn
-  InvokeLambdaPermission: 
+      - !GetAtt DisablerLambdaFunction.Arn
+  InvokeDisablerLambdaPermission: 
     Type: AWS::Lambda::Permission
     Properties: 
-      FunctionName: !GetAtt LambdaFunction.Arn
+      FunctionName: !GetAtt DisablerLambdaFunction.Arn
       Action: "lambda:InvokeFunction"
       Principal: "lambda.alarms.cloudwatch.amazonaws.com"
       SourceArn: !GetAtt AccessDeniedAlarm.Arn
+# monitoring
+  RunIDTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - AttributeName: "RunID"
+          AttributeType: "S"
+      KeySchema: 
+        - AttributeName: "RunID"
+          KeyType: "HASH"
+      BillingMode: PAY_PER_REQUEST
+      OnDemandThroughput:
+        MaxReadRequestUnits: 5
+        MaxWriteRequestUnits: 5
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+  RunsTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - AttributeName: "InternalID"
+          AttributeType: "S"
+        - AttributeName: "Constant"
+          AttributeType: "S"
+        - AttributeName: "StartTime"
+          AttributeType: "N"
+      KeySchema: 
+        - AttributeName: "InternalID"
+          KeyType: "HASH"
+      BillingMode: PAY_PER_REQUEST
+      OnDemandThroughput:
+        MaxReadRequestUnits: 5
+        MaxWriteRequestUnits: 5
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      GlobalSecondaryIndexes: 
+        - IndexName: "ByStartTime"
+          KeySchema: 
+            - AttributeName: "Constant"
+              KeyType: "HASH"
+            - AttributeName: "StartTime"
+              KeyType: "RANGE"
+          OnDemandThroughput:
+            MaxReadRequestUnits: 5
+            MaxWriteRequestUnits: 5
+          Projection: 
+            ProjectionType: "ALL"
+  MonitoringLambdaLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      RetentionInDays: 365
+  MonitoringLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: allow-logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - 'logs:PutLogEvents'
+              - 'logs:CreateLogStream'
+              Resource: !Sub "${MonitoringLambdaLogGroup.Arn}:*"
+            - Effect: Allow
+              Action:
+              - 'dynamodb:GetItem'
+              - 'dynamodb:PutItem'
+              Resource: !GetAtt RunIDTable.Arn
+            - Effect: Allow
+              Action:
+              - 'dynamodb:PutItem'
+              - 'dynamodb:UpdateItem'
+              Resource: !GetAtt RunsTable.Arn
+  MonitoringLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs20.x
+      Role: !GetAtt MonitoringLambdaExecutionRole.Arn
+      Handler: index.handler
+      ReservedConcurrentExecutions: 1
+      Timeout: 30
+      Code:
+        ZipFile: |
+          const {DynamoDBClient, GetItemCommand, PutItemCommand, UpdateItemCommand} = require("@aws-sdk/client-dynamodb");
+          const crypto = require("crypto");
+
+          exports.handler = async (event) => {
+            console.log(event);
+            const client = new DynamoDBClient();
+            if (event.requestContext.http.path === "/run") {
+              const runid = event.queryStringParameters.runid;
+              const internalId = crypto.randomUUID();
+              console.log({message: "starting monitoring run", internalId, event});
+              try {
+                await client.send(new PutItemCommand({
+                  TableName: process.env.RunIDTable,
+                  Item: {
+                    RunID: {S: runid},
+                    InternalID: {S: internalId},
+                    ttl: {N: String(Math.round((new Date().getTime() + 365 * 24 * 60 * 60 * 1000) / 1000))},
+                  },
+                  ConditionExpression: "attribute_not_exists(#pk)",
+                  ExpressionAttributeNames: {
+                    "#pk": "RunID",
+                  },
+                }));
+                await client.send(new PutItemCommand({
+                  TableName: process.env.RunsTable,
+                  Item: {
+                    InternalID: {S: internalId},
+                    StartTime: {N: String(new Date().getTime())},
+                    Constant: {S: "1"},
+                    ttl: {N: String(Math.round((new Date().getTime() + 365 * 24 * 60 * 60 * 1000) / 1000))},
+                  },
+                  ConditionExpression: "attribute_not_exists(#pk)",
+                  ExpressionAttributeNames: {
+                    "#pk": "InternalID",
+                  },
+                }));
+              }catch(e) {
+                console.log({message: "starting monitoring run: error", internalId, e});
+                throw e;
+              }
+            } else if (event.requestContext.http.path === "/log") {
+              const {runid, format, type} = event.queryStringParameters;
+              const body = event.isBase64Encoded ? Buffer.from(event.body, "base64").toString() : event.body;
+
+              const item = await client.send(new GetItemCommand({
+                TableName: process.env.RunIDTable,
+                Key: {
+                  RunID: {S: runid},
+                },
+              }));
+              const internalId = item.Item.InternalID.S;
+              console.log({message: "logging", internalId, event});
+
+              try {
+                if (format === "json") {
+                  console.log({internalId, type, body: JSON.parse(body)});
+                }else {
+                  console.log({internalId, type, body});
+                }
+              }catch(e) {
+                console.log({message: "logging: error", internalId, e});
+                throw e;
+              }
+            } else if (["/success", "/fail"].includes(event.requestContext.http.path)) {
+              const {runid} = event.queryStringParameters;
+              const item = await client.send(new GetItemCommand({
+                TableName: process.env.RunIDTable,
+                Key: {
+                  RunID: {S: runid},
+                },
+              }));
+              const internalId = item.Item.InternalID.S;
+              console.log({message: "finishing monitoring run", internalId, event});
+              try {
+                await client.send(new UpdateItemCommand({
+                  TableName: process.env.RunsTable,
+                  Key: {
+                    InternalID: {S: internalId},
+                  },
+                  ConditionExpression: "attribute_exists(#pk) and attribute_not_exists(#Success)",
+                  UpdateExpression: "SET #EndTime = :EndTime, #Success = :Success",
+                  ExpressionAttributeNames: {
+                    "#pk": "InternalID",
+                    "#EndTime": "EndTime",
+                    "#Success": "Success",
+                  },
+                  ExpressionAttributeValues: {
+                    ":EndTime": {N: String(new Date().getTime())},
+                    ":Success": {BOOL: String(event.requestContext.http.path === "/success")},
+                  },
+                }));
+              }catch(e) {
+                console.log({message: "finishing: error", internalId, e});
+                throw e;
+              }
+            }else {
+              throw new Error("Path not exists");
+            }
+          };
+      LoggingConfig:
+        LogGroup: !Ref MonitoringLambdaLogGroup
+        LogFormat: JSON
+      Environment:
+        Variables:
+          RunIDTable: !GetAtt RunIDTable.Arn
+          RunsTable: !GetAtt RunsTable.Arn
+  MonitoringLambdaUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: AWS_IAM
+      TargetFunctionArn: !GetAtt MonitoringLambdaFunction.Arn
 Outputs:
   CloudTrailSNSTopic:
     Value: !GetAtt CloudTrailSNSTopic.TopicArn
-  Logs:
+  AccessDeniedLogs:
     Value: !Sub
       - "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home#logsV2:log-groups/log-group/${CloudTrailLogsEscaped}/log-events"
       - CloudTrailLogsEscaped: !Join [ '$252F', !Split [ '/', !Ref SQSLogGroup ] ]
+  MonitoringUrl:
+    Value: !GetAtt MonitoringLambdaUrl.FunctionUrl
+  MonitoringRegion:
+    Value: !Ref AWS::Region
+  Bucket:
+    Value: !GetAtt Bucket.Arn
