@@ -6,13 +6,13 @@ on:
     - main
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
     - name: Install dependencies
-      run: apt install makepkg updpkgsums namcap
+      run: sudo apt-get install makepkg updpkgsums namcap
     - name: update source hashes
       run: updpkgsums
       working-directory: ${{github.workspace}}/clients
