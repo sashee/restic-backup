@@ -189,7 +189,7 @@ Resources:
       Runtime: nodejs20.x
       Role: !GetAtt DisablerLambdaExecutionRole.Arn
       Handler: index.handler
-      ReservedConcurrentExecutions: 1
+#     ReservedConcurrentExecutions: 1
       Timeout: 30
       Code:
         ZipFile: |
@@ -331,7 +331,7 @@ Resources:
       Runtime: nodejs20.x
       Role: !GetAtt MonitoringLambdaExecutionRole.Arn
       Handler: index.handler
-      ReservedConcurrentExecutions: 1
+#     ReservedConcurrentExecutions: 1
       Timeout: 30
       Code:
         ZipFile: |
@@ -459,3 +459,7 @@ Outputs:
     Value: !Ref AWS::Region
   Bucket:
     Value: !GetAtt Bucket.Arn
+  User:
+    Value: !Ref User
+  ResticRepository:
+    Value: !Sub "s3.dualstack.${AWS::Region}.amazonaws.com/${Bucket}"
