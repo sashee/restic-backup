@@ -12,7 +12,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install pacman
-      run: sude apt-get update && sudo apt-get install pacman-package-manager
+      run: sudo apt-get update && sudo apt-get install pacman-package-manager
     - name: Install dependencies
       run: sudo pacman --noconfirm -S pacman-contrib
     - name: update source hashes
