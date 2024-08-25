@@ -1,0 +1,22 @@
+pkgname="hello-world"
+pkgver="1.0.0"
+pkgrel="2"
+pkgdesc="Hello world in your terminal!"
+arch=(any)
+license=("custom")
+source=("index.js" "package.json" "package-lock.json")
+depends=('nodejs')
+makedepends=('npm')
+sha512sums=("SKIP" "SKIP" "SKIP")
+
+build() {
+	npm ci
+}
+
+package() {
+  mkdir -p "${pkgdir}/usr/lib/hello-world"
+  cp -r "${srcdir}/." "${pkgdir}/usr/lib/hello-world"
+  mkdir -p "${pkgdir}/usr/bin"
+	ln -s "../lib/hello-world/index.js" "${pkgdir}/usr/bin/hello-world"
+}
+
