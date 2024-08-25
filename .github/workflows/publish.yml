@@ -11,8 +11,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Install pacman
+      run: sudo apt-get install pacman-package-manager
     - name: Install dependencies
-      run: sudo apt-get install makepkg updpkgsums namcap
+      run: sudo pacman --noconfirm -S pacman-contrib
     - name: update source hashes
       run: updpkgsums
       working-directory: ${{github.workspace}}/clients
