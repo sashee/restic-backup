@@ -7,17 +7,28 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
 
     steps:
     - uses: actions/checkout@v4
-    - name: Install pacman
-      run: sudo apt-get update && sudo apt-get install pacman-package-manager && sudo ln -s /etc/pacman.conf /usr/local/etc/
+    - name: Setup builder user
+      run: 'useradd -m builder && echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder && chmod -R 777 .'
     - name: Install dependencies
-      run: sudo pacman --noconfirm -S pacman-contrib
+      run: pacman --noconfirm -Sy pacman-contrib namcap
     - name: update source hashes
-      run: updpkgsums
+      run: runuser -u builder -- updpkgsums
       working-directory: ${{github.workspace}}/clients
     - name: check PKGBUILD
-      run: namcap PKGBUILD
+      run: 'if [ -n "$(runuser -u builder -- namcap -m PKGBUILD)" ]; then (namcap PKGBUILD; exit 1) else (exit 0) fi'
       working-directory: ${{github.workspace}}/clients
+    - name: makepkg
+      run: runuser -u builder -- makepkg --syncdeps --noconfirm --rmdeps --install
+      working-directory: ${{github.workspace}}/clients
+    - name: ls
+      run: which hello-world
+    - uses: actions/upload-artifact@v4
+      with:
+        name: arch-package
+        path: ${{github.workspace}}/clients/*.pkg.tar.zst
+        if-no-files-found: error

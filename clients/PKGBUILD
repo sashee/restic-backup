@@ -1,9 +1,11 @@
+# Maintainer: Tamas Sallai <tamas.sallai@advancedweb.hu>
 pkgname="hello-world"
 pkgver="1.0.0"
 pkgrel="2"
 pkgdesc="Hello world in your terminal!"
 arch=(any)
 license=("custom")
+url="https://github.com/sashee/restic-backup"
 source=("index.js" "package.json" "package-lock.json")
 depends=('nodejs')
 makedepends=('npm')
