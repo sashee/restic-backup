@@ -17,7 +17,7 @@ build() {
 
 package() {
   mkdir -p "${pkgdir}/usr/lib/hello-world"
-  cp -r "${srcdir}/." "${pkgdir}/usr/lib/hello-world"
+  cp -Lr "${srcdir}/." "${pkgdir}/usr/lib/hello-world"
   mkdir -p "${pkgdir}/usr/bin"
 	ln -s "../lib/hello-world/index.js" "${pkgdir}/usr/bin/hello-world"
 }

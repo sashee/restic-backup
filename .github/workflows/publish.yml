@@ -25,10 +25,17 @@ jobs:
     - name: makepkg
       run: runuser -u builder -- makepkg --syncdeps --noconfirm --rmdeps --install
       working-directory: ${{github.workspace}}/clients
-    - name: ls
+    - name: which
       run: which hello-world
+    - name: run
+      run: hello-world
     - uses: actions/upload-artifact@v4
       with:
         name: arch-package
         path: ${{github.workspace}}/clients/*.pkg.tar.zst
         if-no-files-found: error
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: '*.pkg.tar.zst'
