@@ -32,11 +32,11 @@ jobs:
       if: ${{ !env.ACT }}
       uses: actions/attest-build-provenance@v1
       with:
-        subject-path: '*.pkg.tar.zst'
+        subject-path: '${{github.workspace}}/clients/*.pkg.tar.zst'
     - uses: actions/upload-artifact@v4
       with:
         name: arch-package
-        path: ${{github.workspace}}/clients/*.pkg.tar.zst
+        path: '${{github.workspace}}/clients/*.pkg.tar.zst'
         if-no-files-found: error
     - name: Release
       uses: softprops/action-gh-release@v2
