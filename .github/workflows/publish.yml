@@ -32,7 +32,7 @@ jobs:
       if: ${{ !env.ACT }}
       uses: actions/attest-build-provenance@v1
       with:
-        subject-path: '${{ github.workspace }}/*.pkg.tar.zst'
+        subject-path: '*.pkg.tar.zst'
     - uses: actions/upload-artifact@v4
       with:
         name: arch-package
