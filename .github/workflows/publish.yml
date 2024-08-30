@@ -34,6 +34,10 @@ jobs:
       uses: actions/attest-build-provenance@v1
       with:
         subject-path: '${{github.workspace}}/clients/*.pkg.tar.zst'
+    - name: Copy attestation file
+      run: cp $BUNDLE arch-bundle-attestation.jsonl
+      env:
+        BUNDLE: ${{steps.attest.outputs.bundle-path}}
     - uses: actions/upload-artifact@v4
       with:
         name: arch-package
@@ -44,8 +48,8 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: |
-          'clients/*.pkg.tar.zst'
-          ${{steps.attest.outputs.bundle-path}}
+          clients/*.pkg.tar.zst
+          arch-bundle-attestation.jsonl
 
   test-arch-package:
     runs-on: ubuntu-latest
