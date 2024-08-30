@@ -87,10 +87,15 @@ jobs:
       run: ls -l
       working-directory: ${{github.workspace}}/clients
     - name: Attest
+      id: attest
       if: startsWith(github.ref, 'refs/tags/')
       uses: actions/attest-build-provenance@v1
       with:
         subject-path: '${{github.workspace}}/clients/*.deb'
+    - name: Copy attestation file
+      run: cp $BUNDLE deb-bundle-attestation.jsonl
+      env:
+        BUNDLE: ${{steps.attest.outputs.bundle-path}}
     - uses: actions/upload-artifact@v4
       with:
         name: deb-package
@@ -100,7 +105,9 @@ jobs:
       uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: 'clients/*.deb'
+        files: |
+          clients/*.deb
+          arch-bundle-attestation.jsonl
 
   test-deb-package:
     runs-on: ubuntu-latest
