@@ -29,6 +29,7 @@ jobs:
       run: runuser -u builder -- makepkg --syncdeps --noconfirm --rmdeps
       working-directory: ${{github.workspace}}/clients
     - name: Attest
+      id: attest
       if: startsWith(github.ref, 'refs/tags/')
       uses: actions/attest-build-provenance@v1
       with:
@@ -42,7 +43,9 @@ jobs:
       uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: 'clients/*.pkg.tar.zst'
+        files: |
+          'clients/*.pkg.tar.zst'
+          ${{steps.attest.outputs.bundle-path}}
 
   test-arch-package:
     runs-on: ubuntu-latest
