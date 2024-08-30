@@ -64,7 +64,6 @@ jobs:
 
   build-deb-package:
     runs-on: ubuntu-latest
-    container: ubuntu:latest
     permissions:
       contents: write
       id-token: write
@@ -72,6 +71,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: whoami
+      run: whoami
+    - name: Install dependencies
+      run: apt update && apt install -y sudo ca-certificates
     - name: Setup builder user
       run: 'useradd -m builder && echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder && chmod -R 777 .'
     - name: Install makedeb
