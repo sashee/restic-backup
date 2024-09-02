@@ -1,0 +1,44 @@
+[Unit]
+Description=Restic backup to %f
+
+[Service]
+EnvironmentFile=%f/config
+LoadCredentialEncrypted=aws_secret_access_key:%f/aws_secret_access_key
+LoadCredentialEncrypted=restic_password:%f/restic_password
+
+Type=oneshot
+
+SystemCallFilter=@system-service
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+# not compatible with NodeJS because of JIT
+# MemoryDenyWriteExecute=true
+RestrictSUIDSGID=true
+KeyringMode=private
+ProtectClock=true
+RestrictRealtime=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectHostname=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6
+ProtectProc=noaccess
+RemoveIPC=true
+PrivateUsers=true
+User=sashee
+
+ProtectSystem=strict
+
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/sashee/laptop-backup
+BindReadOnlyPaths=/home/sashee/Mobile-backup
+BindReadOnlyPaths=/home/sashee/safe
+BindReadOnlyPaths=/home/sashee/Notes
+
+ExecStart=/usr/lib/restic-backup-client/index.js

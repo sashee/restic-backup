@@ -1,24 +1,24 @@
 # Maintainer: Tamas Sallai <tamas.sallai@advancedweb.hu>
-pkgname="hello-world"
-pkgver="1.0.1"
+pkgname="restic-backup-client"
+pkgver="0.0.1"
 pkgrel="1"
-pkgdesc="Hello world in your terminal!"
+pkgdesc="Restic backup to an S3-compatible storage"
 arch=(any)
 license=("custom")
 url="https://github.com/sashee/restic-backup"
-source=("index.js" "package.json" "package-lock.json")
-depends=('nodejs')
+source=("index.js" "package.json" "package-lock.json" "restic-backup-client@.service")
+depends=('nodejs' 'restic')
 makedepends=('npm')
-sha512sums=("SKIP" "SKIP" "SKIP")
+sha512sums=("SKIP" "SKIP" "SKIP" "SKIP")
 
 build() {
 	npm ci
 }
 
 package() {
-  mkdir -p "${pkgdir}/usr/lib/hello-world"
-  cp -Lr "${srcdir}/." "${pkgdir}/usr/lib/hello-world"
-  mkdir -p "${pkgdir}/usr/bin"
-	ln -s "../lib/hello-world/index.js" "${pkgdir}/usr/bin/hello-world"
+  mkdir -p "${pkgdir}/usr/lib/restic-backup-client"
+  cp -Lr "${srcdir}/." "${pkgdir}/usr/lib/restic-backup-client"
+  mkdir -p "${pkgdir}/etc/systemd/system"
+	cp "${srcdir}/restic-backup-client@.service" "${pkgdir}/etc/systemd/system"
 }
 
