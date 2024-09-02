@@ -4,6 +4,7 @@ Description=Restic backup to %f
 [Service]
 EnvironmentFile=%f/config
 LoadCredentialEncrypted=aws_secret_access_key:%f/aws_secret_access_key
+LoadCredentialEncrypted=monitoring_aws_secret_access_key:%f/monitoring_aws_secret_access_key
 LoadCredentialEncrypted=restic_password:%f/restic_password
 
 Type=oneshot

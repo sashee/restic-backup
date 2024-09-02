@@ -6,6 +6,10 @@ Parameters:
   NotificationSNSTopicArn:
     Type: String
     Description: "The topic that will be notified when the user is disabled"
+  Monitors:
+    Type: String
+    Default: "base"
+    Description: "Comma-separated list of available monitors"
 Resources:
   Bucket:
     Type: AWS::S3::Bucket
@@ -28,7 +32,7 @@ Resources:
                 TransitionInDays: 0
       VersioningConfiguration:
         Status: Enabled
-  User:
+  BackupUser:
     Type: AWS::IAM::User
     Properties:
       Policies:
@@ -47,6 +51,14 @@ Resources:
                  - 's3:PutObject'
                  - 's3:DeleteObject'
                 Resource: !Sub "${Bucket.Arn}/*"
+  MonitoringUser:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+      - PolicyName: backup
+        PolicyDocument:
+           Version: 2012-10-17
+           Statement:
               - Effect: Allow
                 Action:
                 - 'lambda:InvokeFunctionUrl'
@@ -145,7 +157,8 @@ Resources:
             - GetCallerIdentity
         userIdentity:
           arn:
-            - !GetAtt User.Arn
+            - !GetAtt BackupUser.Arn
+            - !GetAtt MonitoringUser.Arn
   DisablerLambdaLogGroup: 
     Type: AWS::Logs::LogGroup
     Properties: 
@@ -175,7 +188,9 @@ Resources:
             - Effect: Allow
               Action:
               - 'iam:AttachUserPolicy'
-              Resource: !GetAtt User.Arn
+              Resource:
+              - !GetAtt BackupUser.Arn
+              - !GetAtt MonitoringUser.Arn
               Condition:
                 StringEquals:
                   "iam:PolicyARN": "arn:aws:iam::aws:policy/AWSDenyAll"
@@ -198,7 +213,11 @@ Resources:
 
           exports.handler = async (event) => {
             await new IAMClient().send(new AttachUserPolicyCommand({
-              UserName: process.env.UserName,
+              UserName: process.env.BackupUserName,
+              PolicyArn: "arn:aws:iam::aws:policy/AWSDenyAll",
+            }));
+            await new IAMClient().send(new AttachUserPolicyCommand({
+              UserName: process.env.MonitoringUserName,
               PolicyArn: "arn:aws:iam::aws:policy/AWSDenyAll",
             }));
 
@@ -213,7 +232,8 @@ Resources:
         LogFormat: JSON
       Environment:
         Variables:
-          UserName: !Ref User
+          BackupUserName: !Ref BackupUser
+          MonitoringUserName: !Ref MonitoringUser
           NotificationSNSTopicArn: !Ref NotificationSNSTopicArn
           SQSLogGroup: !Ref SQSLogGroup
   AccessDeniedAlarm:
@@ -263,7 +283,7 @@ Resources:
       AttributeDefinitions: 
         - AttributeName: "InternalID"
           AttributeType: "S"
-        - AttributeName: "Constant"
+        - AttributeName: "Monitor"
           AttributeType: "S"
         - AttributeName: "StartTime"
           AttributeType: "N"
@@ -278,9 +298,9 @@ Resources:
         AttributeName: ttl
         Enabled: true
       GlobalSecondaryIndexes: 
-        - IndexName: "ByStartTime"
+        - IndexName: "ByMonitor"
           KeySchema: 
-            - AttributeName: "Constant"
+            - AttributeName: "Monitor"
               KeyType: "HASH"
             - AttributeName: "StartTime"
               KeyType: "RANGE"
@@ -342,15 +362,19 @@ Resources:
             console.log(event);
             const client = new DynamoDBClient();
             if (event.requestContext.http.path === "/run") {
-              const runid = event.queryStringParameters.runid;
+              const {runid, monitor} = event.queryStringParameters;
               const internalId = crypto.randomUUID();
               console.log({message: "starting monitoring run", internalId, event});
               try {
+                if (!process.env.Monitors.split(",").includes(monitor)) {
+                  throw new Error(`Monitor not defined: ${monitor}`);
+                };
                 await client.send(new PutItemCommand({
                   TableName: process.env.RunIDTable,
                   Item: {
                     RunID: {S: runid},
                     InternalID: {S: internalId},
+                    Monitor: {S: monitor},
                     ttl: {N: String(Math.round((new Date().getTime() + 365 * 24 * 60 * 60 * 1000) / 1000))},
                   },
                   ConditionExpression: "attribute_not_exists(#pk)",
@@ -363,7 +387,7 @@ Resources:
                   Item: {
                     InternalID: {S: internalId},
                     StartTime: {N: String(new Date().getTime())},
-                    Constant: {S: "1"},
+                    Monitor: {S: monitor},
                     ttl: {N: String(Math.round((new Date().getTime() + 365 * 24 * 60 * 60 * 1000) / 1000))},
                   },
                   ConditionExpression: "attribute_not_exists(#pk)",
@@ -376,7 +400,7 @@ Resources:
                 throw e;
               }
             } else if (event.requestContext.http.path === "/log") {
-              const {runid, format, type} = event.queryStringParameters;
+              const {runid, label} = event.queryStringParameters;
               const body = event.isBase64Encoded ? Buffer.from(event.body, "base64").toString() : event.body;
 
               const item = await client.send(new GetItemCommand({
@@ -389,11 +413,7 @@ Resources:
               console.log({message: "logging", internalId, event});
 
               try {
-                if (format === "json") {
-                  console.log({internalId, type, body: JSON.parse(body)});
-                }else {
-                  console.log({internalId, type, body});
-                }
+                console.log({internalId, label, body: JSON.parse(body)});
               }catch(e) {
                 console.log({message: "logging: error", internalId, e});
                 throw e;
@@ -441,6 +461,7 @@ Resources:
         Variables:
           RunIDTable: !GetAtt RunIDTable.Arn
           RunsTable: !GetAtt RunsTable.Arn
+          Monitors: !Ref Monitors
   MonitoringLambdaUrl:
     Type: AWS::Lambda::Url
     Properties:
@@ -459,7 +480,9 @@ Outputs:
     Value: !Ref AWS::Region
   Bucket:
     Value: !GetAtt Bucket.Arn
-  User:
-    Value: !Ref User
+  BackupUser:
+    Value: !Ref BackupUser
+  MonitoringUser:
+    Value: !Ref MonitoringUser
   ResticRepository:
     Value: !Sub "s3.dualstack.${AWS::Region}.amazonaws.com/${Bucket}"
