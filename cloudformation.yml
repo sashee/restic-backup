@@ -413,7 +413,7 @@ Resources:
               console.log({message: "logging", internalId, event});
 
               try {
-                console.log({internalId, label, body: JSON.parse(body)});
+                console.log({message: "CLIENT_LOG_MESSAGE", internalId, label, body: JSON.parse(body)});
               }catch(e) {
                 console.log({message: "logging: error", internalId, e});
                 throw e;
