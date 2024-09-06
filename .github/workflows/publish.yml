@@ -86,7 +86,7 @@ jobs:
     - name: Install dependencies
       run: apt update && apt install -y pacman-package-manager nodejs sudo zstd
     - name: create target directory
-      run: mkdir -p target
+      run: mkdir -p ${{github.workspace}}/target
     - uses: actions/download-artifact@v4
       with:
         name: arch-package
@@ -94,9 +94,9 @@ jobs:
       run: ls -Rl
     - name: Setup builder user
       run: 'useradd -m builder && echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder && chmod -R 777 .'
-    - name: prepare data directory
-      run: tar --zstd -xvf *.pkg.tar.zst -C ./target
-    - name: remove files from data directory
+    - name: prepare target directory
+      run: tar --zstd -xvf *.pkg.tar.zst -C ${{github.workspace}}/target
+    - name: remove files from target directory
       run: find . -maxdepth 1 -type f -delete
       working-directory: ${{github.workspace}}/target
     - name: makepkg
@@ -119,6 +119,9 @@ jobs:
     - name: copy control file
       run: mkdir -p ${{github.workspace}}/target/DEBIAN && cp control ${{github.workspace}}/target/DEBIAN/control
       working-directory: ${{github.workspace}}/clients
+    - name: pwd
+      run: pwd
+      working-directory: ${{github.workspace}}/target
     - name: ls in target
       run: ls -Rla
       working-directory: ${{github.workspace}}/target
