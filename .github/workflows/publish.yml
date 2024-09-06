@@ -117,7 +117,7 @@ jobs:
       run: cat control
       working-directory: ${{github.workspace}}/clients
     - name: copy control file
-      run: mkdir ${{github.workspace}}/target/DEBIAN && cp control ${{github.workspace}}/target/DEBIAN/control
+      run: mkdir -p ${{github.workspace}}/target/DEBIAN && cp control ${{github.workspace}}/target/DEBIAN/control
       working-directory: ${{github.workspace}}/clients
     - name: ls
       run: ls -la
