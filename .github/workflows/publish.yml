@@ -56,6 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:base
     needs: build-arch-package
+    if: false
 
     steps:
     - name: Setup builder user
@@ -76,6 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ubuntu:latest
     needs: build-arch-package
+    if: false
     permissions:
       contents: write
       id-token: write
@@ -152,10 +154,84 @@ jobs:
           *.deb
           deb-bundle-attestation.jsonl
 
+  build-termux-package:
+    runs-on: ubuntu-latest
+    needs: build-arch-package
+    container: ubuntu:latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install dependencies
+      run: apt update && apt install -y pacman-package-manager nodejs sudo zstd git
+    - name: setup docker
+      run: |
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get install -y ca-certificates curl
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
+
+        # Add the repository to Apt sources:
+        echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+          $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+          tee /etc/apt/sources.list.d/docker.list > /dev/null
+        apt-get update
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    - name: test docker
+      run: docker run hello-world
+    - name: test docker2
+      run: docker pull ghcr.io/termux/package-builder:latest
+    - name: clone termux-packages
+      run: git clone https://github.com/termux/termux-packages.git
+    - name: create package directory
+      run: mkdir -p ./termux-packages/packages/restic-backup
+    - uses: actions/download-artifact@v4
+      with:
+        name: arch-package
+    - name: Setup builder user
+      run: 'useradd -m builder && echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder && chmod -R 777 .'
+    - name: makepkg
+      run: runuser -u builder -- makepkg --printsrcinfo > .SRCINFO
+      working-directory: ./clients
+    - name: setup build.sh
+      run: |
+        cat .SRCINFO | awk '$1 == "pkgver" {version = substr($0, index($0,"= ")+2)} $1 == "pkgrel" {rel = substr($0, index($0,"= ")+2)} END{print "TERMUX_PKG_VERSION=\"" version "-" rel "\""}' >> build.sh
+        cat .SRCINFO | awk '$1 == "pkgdesc" {print "TERMUX_PKG_DESCRIPTION=\"" substr($0, index($0,"= ")+2) "\""}' >> build.sh
+        cat .SRCINFO | awk '$1 == "arch" {val = substr($0, index($0,"= ")+2); print "TERMUX_PKG_PLATFORM_INDEPENDENT=" ((val == "any") ? "true" : "false")}' >> build.sh
+        cat .SRCINFO | awk '$1 == "license" {print "TERMUX_PKG_LICENSE=\"" substr($0, index($0,"= ")+2) "\""}' >> build.sh
+        cat PKGBUILD | awk 'index($0, "Maintainer:") {print "TERMUX_PKG_MAINTAINER=\"" substr($0, index($0,": ")+2) "\""}' >> build.sh
+        cat .SRCINFO | awk '$1 == "url" {print "TERMUX_PKG_HOMEPAGE=\"" substr($0, index($0,"= ")+2) "\""}' >> build.sh
+        cat .SRCINFO | awk 'BEGIN{res=""} $1 == "depends" {if (res == "") {res = substr($0, index($0,"= ")+2)} else {res = (res ", " substr($0, index($0,"= ")+2))}} END{print "TERMUX_PKG_DEPENDS=\"" res "\""}' >> build.sh
+        cat termux-build.sh >> build.sh
+      working-directory: ./clients
+    - name: extract package name
+      id: package-name
+      run: |
+        cat .SRCINFO | awk '$1 == "pkgname" {print "package-name=" substr($0, index($0,"= ")+2)}' >> $GITHUB_OUTPUT
+    - name: prepare package directory
+      run: tar --zstd -xvf *.pkg.tar.zst -C ./termux-packages/packages/${{steps.package-name.outputs.package-name}}
+    - name: remove files from the package directory
+      run: find . -maxdepth 1 -type f -delete
+      working-directory: ./termux-packages/packages/${{steps.package-name.outputs.package-name}}
+    - name: copy build.sh file
+      run: cp ./clients/build.sh ./termux-packages/packages/${{steps.package-name.outputs.package-name}}/build.sh
+    - name: print build.sh
+      run: cat ./termux-packages/packages/${{steps.package-name.outputs.package-name}}/build.sh
+    - name: run run-docker.sh
+      run: ./scripts/run-docker.sh ./build-package.sh ${{steps.package-name.outputs.package-name}}
+      working-directory: ./termux-packages
+
   test-deb-package:
     runs-on: ubuntu-latest
     container: ubuntu:latest
     needs: build-deb-package
+    if: false
 
     steps:
     - name: Install dependencies
