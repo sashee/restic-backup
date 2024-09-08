@@ -141,7 +141,7 @@ Resources:
       Source: !GetAtt Queue.Arn
       Target: !GetAtt SQSLogGroup.Arn
       TargetParameters:
-        InputTemplate: "<$.body.Message>"
+        InputTemplate: "<$.tody.Message>"
   QueueSubscription:
     Type: AWS::SNS::Subscription
     Properties:
@@ -309,6 +309,26 @@ Resources:
             MaxWriteRequestUnits: 5
           Projection: 
             ProjectionType: "ALL"
+  LogsTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - AttributeName: "InternalID"
+          AttributeType: "S"
+        - AttributeName: "Time"
+          AttributeType: "N"
+      KeySchema: 
+        - AttributeName: "InternalID"
+          KeyType: "HASH"
+        - AttributeName: "Time"
+          KeyType: "RANGE"
+      BillingMode: PAY_PER_REQUEST
+      OnDemandThroughput:
+        MaxReadRequestUnits: 5
+        MaxWriteRequestUnits: 5
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
   MonitoringLambdaLogGroup: 
     Type: AWS::Logs::LogGroup
     Properties: 
@@ -345,6 +365,10 @@ Resources:
               - 'dynamodb:PutItem'
               - 'dynamodb:UpdateItem'
               Resource: !GetAtt RunsTable.Arn
+            - Effect: Allow
+              Action:
+              - 'dynamodb:PutItem'
+              Resource: !GetAtt LogsTable.Arn
   MonitoringLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -357,14 +381,17 @@ Resources:
         ZipFile: |
           const {DynamoDBClient, GetItemCommand, PutItemCommand, UpdateItemCommand} = require("@aws-sdk/client-dynamodb");
           const crypto = require("crypto");
+          const zlib = require("node:zlib");
+          const {promisify} = require("node:util");
 
           exports.handler = async (event) => {
-            console.log(event);
+            const {body, ...rest} = event;
+            console.log({...rest, bodyLength: body?.length});
             const client = new DynamoDBClient();
             if (event.requestContext.http.path === "/run") {
               const {runid, monitor} = event.queryStringParameters;
               const internalId = crypto.randomUUID();
-              console.log({message: "starting monitoring run", internalId, event});
+              console.log({message: "starting monitoring run", internalId});
               try {
                 if (!process.env.Monitors.split(",").includes(monitor)) {
                   throw new Error(`Monitor not defined: ${monitor}`);
@@ -401,7 +428,7 @@ Resources:
               }
             } else if (event.requestContext.http.path === "/log") {
               const {runid, label} = event.queryStringParameters;
-              const body = event.isBase64Encoded ? Buffer.from(event.body, "base64").toString() : event.body;
+              const bodyBuffer = Buffer.from(body, event.isBase64Encoded ? "base64" : "utf8");
 
               const item = await client.send(new GetItemCommand({
                 TableName: process.env.RunIDTable,
@@ -410,14 +437,28 @@ Resources:
                 },
               }));
               const internalId = item.Item.InternalID.S;
-              console.log({message: "logging", internalId, event});
+              console.log({message: "logging", internalId});
 
-              try {
-                console.log({message: "CLIENT_LOG_MESSAGE", internalId, label, body: JSON.parse(body)});
-              }catch(e) {
-                console.log({message: "logging: error", internalId, e});
-                throw e;
-              }
+              const compressed = await promisify(zlib.brotliCompress)(bodyBuffer, {params: {
+                [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT,
+                [zlib.constants.BROTLI_PARAM_QUALITY]: zlib.constants.BROTLI_MAX_QUALITY,
+                [zlib.constants.BROTLI_PARAM_SIZE_HINT]: bodyBuffer.length,
+              }});
+              console.log({type: "compressed", original: bodyBuffer.length, compressed: compressed.length});
+              await client.send(new PutItemCommand({
+                TableName: process.env.LogsTable,
+                Item: {
+                  InternalID: {S: internalId},
+                  Time: {N: String(new Date().getTime())},
+                  Label: {S: label},
+                  Message: {B: compressed.toString("base64")},
+                  ttl: {N: String(Math.round((new Date().getTime() + 365 * 24 * 60 * 60 * 1000) / 1000))},
+                },
+                ConditionExpression: "attribute_not_exists(#pk)",
+                ExpressionAttributeNames: {
+                  "#pk": "InternalID",
+                },
+              }));
             } else if (["/success", "/fail"].includes(event.requestContext.http.path)) {
               const {runid} = event.queryStringParameters;
               const item = await client.send(new GetItemCommand({
@@ -427,7 +468,7 @@ Resources:
                 },
               }));
               const internalId = item.Item.InternalID.S;
-              console.log({message: "finishing monitoring run", internalId, event});
+              console.log({message: "finishing monitoring run", internalId});
               try {
                 await client.send(new UpdateItemCommand({
                   TableName: process.env.RunsTable,
@@ -461,6 +502,7 @@ Resources:
         Variables:
           RunIDTable: !GetAtt RunIDTable.Arn
           RunsTable: !GetAtt RunsTable.Arn
+          LogsTable: !GetAtt LogsTable.Arn
           Monitors: !Ref Monitors
   MonitoringLambdaUrl:
     Type: AWS::Lambda::Url

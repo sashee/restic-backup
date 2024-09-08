@@ -107,7 +107,7 @@ jobs:
         cat .SRCINFO | awk '$1 == "pkgname" {print "Package: " substr($0, index($0,"= ")+2)}' >> control
         cat .SRCINFO | awk '$1 == "pkgver" {version = substr($0, index($0,"= ")+2)} $1 == "pkgrel" {rel = substr($0, index($0,"= ")+2)} END{print "Version: " version "-" rel}' >> control
         cat .SRCINFO | awk '$1 == "pkgdesc" {print "Description: " substr($0, index($0,"= ")+2)}' >> control
-        cat .SRCINFO | awk '$1 == "arch" {print "Architecture: all"}' >> control
+        cat .SRCINFO | awk '$1 == "arch" {val = substr($0, index($0,"= ")+2); print "Architecture:", (val == "any") ? "all" : val}' >> control
         cat .SRCINFO | awk '$1 == "license" {print "License: " substr($0, index($0,"= ")+2)}' >> control
         cat PKGBUILD | awk 'index($0, "Maintainer:") {print "Maintainer: " substr($0, index($0,": ")+2)}' >> control
         cat .SRCINFO | awk '$1 == "url" {print "Homepage: " substr($0, index($0,"= ")+2)}' >> control

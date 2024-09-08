@@ -8,9 +8,15 @@ import childProcess from "node:child_process";
 
 const execFile = util.promisify(childProcess.execFile);
 
-console.log(process.argv)
+console.log(process.argv);
+
 if(process.argv[2] === "check") {
 	console.log(AwsClient);
+	const {stdout} = await execFile("restic", ["version"], {env: {}});
+	console.log(stdout);
+	const packageJsonVersion = JSON.parse(await fs.readFile(new URL("./package.json", import.meta.url), "utf8")).version;
+	console.log(packageJsonVersion);
+
 	process.exit(0);
 }
 
@@ -30,24 +36,38 @@ const isJson = (str) => {
 	}
 }
 
-console.log(JSON.stringify(process.env, undefined, 4));
 const runId = crypto.randomUUID();
+
+const callWithRetry = async (fn, depth = 0) => {
+	try {
+		return await fn();
+	}catch(e) {
+		if (depth > 7) {
+			throw e;
+		}
+		await wait(2 ** depth * 10);
+	
+		return callWithRetry(fn, depth + 1);
+	}
+}
 
 const monitoringAwsSecretAccessKey = await fs.readFile(path.join(process.env.CREDENTIALS_DIRECTORY, "monitoring_aws_secret_access_key"));
 const aws = new AwsClient({accessKeyId: process.env.MONITORING_AWS_ACCESS_KEY_ID, secretAccessKey: monitoringAwsSecretAccessKey});
 const sendMonitoring = async ({pathname, searchParams, method, body}) => {
-	const res = await aws.fetch(constructURL(process.env.MONITORING_URL, pathname, searchParams), {
-		method,
-		body,
-		aws: {
-			service: "lambda",
-			region: process.env.MONITORING_REGION,
-		},
+	return callWithRetry(async () => {
+		const res = await aws.fetch(constructURL(process.env.MONITORING_URL, pathname, searchParams), {
+			method,
+			body,
+			aws: {
+				service: "lambda",
+				region: process.env.MONITORING_REGION,
+			},
+		});
+		if (!res.ok) {
+			const restext = await res.text();
+			throw new Error(`Error sending monitoring event: ${restext}`);
+		}
 	});
-	if (!res.ok) {
-		const restext = await res.text();
-		throw new Error(`Error sending monitoring event: ${restext}`);
-	}
 }
 
 const awsSecretAccessKey = await fs.readFile(path.join(process.env.CREDENTIALS_DIRECTORY, "aws_secret_access_key"));
@@ -59,12 +79,13 @@ const runCommand = async ({label, command, args, env, processStdout}) => {
 			// 5 MB, lambda invocation limit is 6 MB
 			maxBuffer: 5 * 1024 * 1024,
 		});
-		await sendMonitoring({pathname: "/log", searchParams: {runid: runId, label}, method: "POST", body: JSON.stringify({stdout: (processStdout ?? ((val) => val))(stdout), stderr})});
+		console.log(JSON.stringify({stdout: (processStdout ?? ((val) => val))(stdout), stderr}));
+		await sendMonitoring({pathname: "/log", searchParams: {runid: runId, label}, method: "POST", body: JSON.stringify({stdout: (processStdout ?? ((val) => val))(stdout), stderr})}).catch((e) => console.error(e));
 	}catch(e) {
 		if (e.stdout !== undefined && e.stderr !== undefined) {
 			// error is thrown by the execFile
-			console.log(e.stderr, e.stderr);
-			await sendMonitoring({pathname: "/log", searchParams: {runid: runId, label: `${label}-error`}, method: "POST", body: JSON.stringify({stdout: e.stdout, stderr: e.stderr})});
+			console.log(e.stdout, e.stderr);
+			await sendMonitoring({pathname: "/log", searchParams: {runid: runId, label: `${label}-error`}, method: "POST", body: JSON.stringify({stdout: e.stdout, stderr: e.stderr})}).catch((e) => console.error(e));
 			throw e;
 		}else {
 			throw e;
@@ -76,8 +97,14 @@ await sendMonitoring({pathname: "/run", searchParams: {runid: runId, monitor: pr
 
 try {
 	const resticPassword = await fs.readFile(path.join(process.env.CREDENTIALS_DIRECTORY, "restic_password"));
+	const packageJsonVersion = JSON.parse(await fs.readFile(new URL("./package.json", import.meta.url), "utf8")).version;
 
-	await runCommand({label: "version", command: "restic", args: ["version"], env: {}});
+	await runCommand({label: "version", command: "restic", args: ["version"], env: {}, processStdout: (stdout) => {
+		return {
+			resticVersion: stdout,
+			packageVersion: packageJsonVersion,
+		};
+	}});
 	await runCommand({label: "unlock", command: "restic", args: ["unlock"], env: {AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID, RESTIC_REPOSITORY: process.env.RESTIC_REPOSITORY, AWS_SECRET_ACCESS_KEY: awsSecretAccessKey, RESTIC_PASSWORD: resticPassword}});
 	await runCommand({
 		label: "backup",

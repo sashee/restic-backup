@@ -8,7 +8,7 @@ license=("custom")
 url="https://github.com/sashee/restic-backup"
 source=("index.js" "package.json" "package-lock.json" "restic-backup-client@.service" "restic-backup-client@.timer")
 depends=('nodejs' 'restic')
-makedepends=('npm')
+makedepends=('npm' 'jq')
 sha512sums=("SKIP" "SKIP" "SKIP" "SKIP" "SKIP")
 
 build() {
@@ -16,10 +16,20 @@ build() {
 }
 
 package() {
+	VERSION="$pkgver-$pkgrel"
+	PACKAGE_JSON_VERSION=$(cat package.json| jq -r '.version')
+	
+	if [ "$VERSION" != "$PACKAGE_JSON_VERSION" ]; then
+		echo "version mismatch $VERSION != $PACKAGE_JSON_VERSION"
+		exit 1
+	fi
   mkdir -p "${pkgdir}/usr/lib/restic-backup-client"
-  cp -Lr "${srcdir}/." "${pkgdir}/usr/lib/restic-backup-client"
-  mkdir -p "${pkgdir}/etc/systemd/system"
-	cp "${srcdir}/restic-backup-client@.service" "${pkgdir}/etc/systemd/system"
-	cp "${srcdir}/restic-backup-client@.timer" "${pkgdir}/etc/systemd/system"
+  cp -Lr "${srcdir}/node_modules" "${pkgdir}/usr/lib/restic-backup-client/node_modules"
+  cp "${srcdir}/index.js" "${pkgdir}/usr/lib/restic-backup-client/index.js"
+  cp "${srcdir}/package.json" "${pkgdir}/usr/lib/restic-backup-client/package.json"
+  cp "${srcdir}/package-lock.json" "${pkgdir}/usr/lib/restic-backup-client/package-lock.json"
+  mkdir -p "${pkgdir}/usr/lib/systemd/system"
+	cp "${srcdir}/restic-backup-client@.service" "${pkgdir}/usr/lib/systemd/system"
+	cp "${srcdir}/restic-backup-client@.timer" "${pkgdir}/usr/lib/systemd/system"
 }
 
