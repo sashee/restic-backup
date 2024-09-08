@@ -169,8 +169,6 @@ jobs:
       run: apt update && apt install -y pacman-package-manager nodejs sudo zstd git docker.io
     - name: clone termux-packages
       run: git clone https://github.com/termux/termux-packages.git
-    - name: create package directory
-      run: mkdir -p ./termux-packages/packages/restic-backup
     - uses: actions/download-artifact@v4
       with:
         name: arch-package
@@ -196,8 +194,8 @@ jobs:
         cat .SRCINFO | awk '$1 == "pkgname" {print "package-name=" substr($0, index($0,"= ")+2)}' >> $GITHUB_OUTPUT
       working-directory: ./clients
     - name: prepare package directory
-      run: tar --zstd -xvf *.pkg.tar.zst -C ./termux-packages/packages/${{steps.package-name.outputs.package-name}}
-    - name: remove files from the package directory
+      run: mkdir -p ./termux-packages/packages/${{steps.package-name.outputs.package-name}} && tar --zstd -xvf *.pkg.tar.zst -C ./termux-packages/packages/${{steps.package-name.outputs.package-name}}
+    - name: remove extra files from the package directory
       run: find . -maxdepth 1 -type f -delete
       working-directory: ./termux-packages/packages/${{steps.package-name.outputs.package-name}}
     - name: copy build.sh file
