@@ -203,7 +203,7 @@ jobs:
     - name: print build.sh
       run: cat ./termux-packages/packages/${{steps.package-name.outputs.package-name}}/build.sh
     - name: run run-docker.sh
-      run: ./scripts/run-docker.sh ./build-package.sh ${{steps.package-name.outputs.package-name}}
+      run: ./scripts/run-docker.sh ./termux-packages/build-package.sh ${{steps.package-name.outputs.package-name}}
       working-directory: ./termux-packages
 
   test-deb-package:
