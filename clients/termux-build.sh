@@ -12,6 +12,8 @@ termux_step_make_install() {
 	echo "=====4"
 	ls -R ./termux-packages/packages
 	echo "$PKGNAME"
+	ls - R ./packages/$TERMUX_PKG_NAME/*.patch
+	ls - R ./packages/$PKGNAME
 	install -Dm700 8086tiny "$TERMUX_PREFIX"/libexec/8086tiny
 	install -Dm600 bios "$TERMUX_PREFIX"/share/8086tiny/bios.bin
 	install -Dm600 fd.img "$TERMUX_PREFIX"/share/8086tiny/dos.img
