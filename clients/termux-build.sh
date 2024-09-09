@@ -15,5 +15,4 @@ termux_step_make_install() {
 	ln "$TERMUX_PREFIX/lib/$TERMUS_PKG_NAME"
 	echo "bin"
 	ln "$TERMUX_PREFIX/bin"
-	echo $TERMUX_DEBDIR
 }
