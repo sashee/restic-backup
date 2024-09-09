@@ -227,8 +227,7 @@ jobs:
       run: ls -R
     - name: extract package name
       id: package-name
-      run: |
-        tar tf termux-package.tar.gz | head -n 1 | awk -F/ '{print $1}' >> $GITHUB_OUTPUT
+      run: tar tf termux-package.tar.gz | head -n 1 | awk -F/ '{print $1}' >> $GITHUB_OUTPUT
     - name: extract package
       run: tar -xvf ./termux-package.tar.gz -C ./termux-packages/packages
     - name: run run-docker.sh
