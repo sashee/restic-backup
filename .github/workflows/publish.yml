@@ -189,7 +189,7 @@ jobs:
         cat PKGBUILD | awk 'index($0, "Maintainer:") {print "TERMUX_PKG_MAINTAINER=\"" substr($0, index($0,": ")+2) "\""}' >> build.sh
         cat .SRCINFO | awk '$1 == "url" {print "TERMUX_PKG_HOMEPAGE=\"" substr($0, index($0,"= ")+2) "\""}' >> build.sh
         cat .SRCINFO | awk 'BEGIN{res=""} $1 == "depends" {val = substr($0, index($0,"= ")+2); if (val == "nodejs") {val = "nodejs | nodejs-lts"}; if (res == "") {res = val} else {res = (res ", " val)}} END{print "TERMUX_PKG_DEPENDS=\"" res "\""}' >> build.sh
-        sed 's/$PKGNAME/${{steps.package-name.outputs.package-name}}/g' termux-build.sh >> build.sh
+        cat termux-build.sh >> build.sh
       working-directory: ./clients
     - name: prepare package directory
       run: mkdir -p ./termux-packages/packages/${{steps.package-name.outputs.package-name}} && tar --zstd -xvf *.pkg.tar.zst -C ./termux-packages/packages/${{steps.package-name.outputs.package-name}}
