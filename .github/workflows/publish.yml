@@ -223,10 +223,15 @@ jobs:
     - uses: actions/download-artifact@v4
       with:
         name: 00_prepared-termux-package
+    - name: extract package name
+      id: package-name
+      run: |
+        tar tf termux-package.tar.gz | head -n 1 | awk -F/ '{print $1}' >> $GITHUB_OUTPUT
+      working-directory: ./clients
     - name: extract package
       run: tar -xvf ./termux-package.tar.gz -C ./termux-packages/packages
     - name: run run-docker.sh
-      run: ./scripts/run-docker.sh ./build-package.sh restic-backup-client
+      run: ./scripts/run-docker.sh ./build-package.sh -i ${{steps.package-name.outputs.package-name}}
       working-directory: ./termux-packages
 
   test-deb-package:
