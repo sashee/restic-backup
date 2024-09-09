@@ -7,6 +7,10 @@ termux_step_make_install() {
 	ls -R $TERMUX_PREFIX
 	echo "$TERMUX_PKG_SRCDIR"
 	ls -R $TERMUX_PKG_SRCDIR
+	echo "=====3"
+	ls -R /home/builder/termux-packages
+	echo "=====4"
+	ls -R ./termux-packages/packages
 	echo "$PKGNAME"
 	install -Dm700 8086tiny "$TERMUX_PREFIX"/libexec/8086tiny
 	install -Dm600 bios "$TERMUX_PREFIX"/share/8086tiny/bios.bin
