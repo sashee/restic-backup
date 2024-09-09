@@ -56,7 +56,6 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:base
     needs: build-arch-package
-    if: false
 
     steps:
     - name: Setup builder user
@@ -77,7 +76,6 @@ jobs:
     runs-on: ubuntu-latest
     container: ubuntu:latest
     needs: build-arch-package
-    if: false
     permissions:
       contents: write
       id-token: write
@@ -236,17 +234,34 @@ jobs:
     - name: files
       run: ls -R
       working-directory: ./termux-packages/output
+    - name: Attest
+      id: attest
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/attest-build-provenance@v1
+      with:
+        subject-path: './termux-packages/output/*.deb'
+    - name: Copy attestation file
+      if: startsWith(github.ref, 'refs/tags/')
+      run: cp $BUNDLE termux-bundle-attestation.jsonl
+      env:
+        BUNDLE: ${{steps.attest.outputs.bundle-path}}
     - uses: actions/upload-artifact@v4
       with:
         name: termux-package
         path: './termux-packages/output/*.deb'
         if-no-files-found: error
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          ./termux-packages/output/*.deb
+          termux-bundle-attestation.jsonl
 
   test-deb-package:
     runs-on: ubuntu-latest
     container: ubuntu:latest
     needs: build-deb-package
-    if: false
 
     steps:
     - name: Install dependencies

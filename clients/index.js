@@ -78,6 +78,7 @@ const runCommand = async ({label, command, args, env, processStdout}) => {
 			env,
 			// 5 MB, lambda invocation limit is 6 MB
 			maxBuffer: 5 * 1024 * 1024,
+			shell: true,
 		});
 		console.log(JSON.stringify({stdout: (processStdout ?? ((val) => val))(stdout), stderr}));
 		await sendMonitoring({pathname: "/log", searchParams: {runid: runId, label}, method: "POST", body: JSON.stringify({stdout: (processStdout ?? ((val) => val))(stdout), stderr})}).catch((e) => console.error(e));
