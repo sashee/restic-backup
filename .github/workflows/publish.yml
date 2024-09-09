@@ -154,7 +154,7 @@ jobs:
           *.deb
           deb-bundle-attestation.jsonl
 
-  build-termux-package:
+  prepare-termux-package:
     runs-on: ubuntu-latest
     needs: build-arch-package
     container: ubuntu:latest
@@ -166,9 +166,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install dependencies
-      run: apt update && apt install -y pacman-package-manager nodejs sudo zstd git docker.io
-    - name: clone termux-packages
-      run: git clone https://github.com/termux/termux-packages.git
+      run: apt update && apt install -y pacman-package-manager nodejs zstd
     - uses: actions/download-artifact@v4
       with:
         name: arch-package
@@ -202,8 +200,33 @@ jobs:
       run: cp ./clients/build.sh ./termux-packages/packages/${{steps.package-name.outputs.package-name}}/build.sh
     - name: print build.sh
       run: cat ./termux-packages/packages/${{steps.package-name.outputs.package-name}}/build.sh
+    - name: tar package
+      run: tar -czvf termux-package.tar.gz -C ./termux-packages/packages ${{steps.package-name.outputs.package-name}}
+    - uses: actions/upload-artifact@v4
+      with:
+        name: 00_prepared-termux-package
+        path: './termux-package.tar.gz'
+        if-no-files-found: error
+
+  build-termux-package:
+    runs-on: ubuntu-latest
+    needs: prepare-termux-package
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: clone termux-packages
+      run: git clone https://github.com/termux/termux-packages.git
+    - uses: actions/download-artifact@v4
+      with:
+        name: 00_prepared-termux-package
+    - name: extract package
+      run: tar -xvf ./termux-package.tar.gz -C ./termux-packages/packages
     - name: run run-docker.sh
-      run: ./scripts/run-docker.sh /home/builder/termux-packages/build-package.sh ${{steps.package-name.outputs.package-name}}
+      run: ./scripts/run-docker.sh /home/builder/termux-packages/build-package.sh restic-backup-client
       working-directory: ./termux-packages
 
   test-deb-package:
