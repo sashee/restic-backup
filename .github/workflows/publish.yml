@@ -233,7 +233,7 @@ jobs:
       run: cat contents | head -n 1 | awk -F/ '{print $1}'
     - name: tar tf
       id: package-name
-      run: "(cat contents | head -n 1 | awk -F/ '/./ {print $1}') >> $GITHUB_OUTPUT"
+      run: "(cat contents | head -z -n 1 | awk -F/ '{print $1}') >> $GITHUB_OUTPUT"
     - name: tar tf
       run: "rm contents"
     - name: extract package
