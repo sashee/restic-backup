@@ -226,14 +226,7 @@ jobs:
     - name: files
       run: ls -R
     - name: tar tf
-      run: tar tf termux-package.tar.gz
-    - name: tar tf2
-      run: tar tf termux-package.tar.gz | head -n 1
-    - name: tar tf3
-      run: tar tf termux-package.tar.gz | head -n 1 | awk -F/ '{print $1}' 
-    - name: extract package name
-      id: package-name
-      run: tar tf termux-package.tar.gz | head -n 1 | awk -F/ '{print $1}' >> $GITHUB_OUTPUT
+      run: tar tf termux-package.tar.gz > contents && tar tf termux-package.tar.gz | head -n 1 | awk -F/ '{print $1}' >> $GITHUB_OUTPUT && rm contents
     - name: extract package
       run: tar -xvf ./termux-package.tar.gz -C ./termux-packages/packages
     - name: run run-docker.sh
