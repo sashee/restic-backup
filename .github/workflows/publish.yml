@@ -235,14 +235,12 @@ jobs:
       working-directory: ./termux-packages
     - name: files
       run: ls -R
-      working-directory: ./termux-packages
-    - name: files
-      run: ls -R
       working-directory: ./termux-packages/output
-    - name: files
-      run: ls -R
-      working-directory: ./termux-packages/debs
-
+    - uses: actions/upload-artifact@v4
+      with:
+        name: termux-package
+        path: './termux-packages/output/*.deb'
+        if-no-files-found: error
 
   test-deb-package:
     runs-on: ubuntu-latest
