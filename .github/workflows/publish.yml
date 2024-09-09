@@ -175,6 +175,11 @@ jobs:
     - name: makepkg
       run: runuser -u builder -- makepkg --printsrcinfo > .SRCINFO
       working-directory: ./clients
+    - name: extract package name
+      id: package-name
+      run: |
+        cat .SRCINFO | awk '$1 == "pkgname" {print "package-name=" substr($0, index($0,"= ")+2)}' >> $GITHUB_OUTPUT
+      working-directory: ./clients
     - name: setup build.sh
       run: |
         cat .SRCINFO | awk '$1 == "pkgver" {version = substr($0, index($0,"= ")+2)} $1 == "pkgrel" {rel = substr($0, index($0,"= ")+2)} END{print "TERMUX_PKG_VERSION=\"" version "-" rel "\""}' >> build.sh
@@ -184,12 +189,7 @@ jobs:
         cat PKGBUILD | awk 'index($0, "Maintainer:") {print "TERMUX_PKG_MAINTAINER=\"" substr($0, index($0,": ")+2) "\""}' >> build.sh
         cat .SRCINFO | awk '$1 == "url" {print "TERMUX_PKG_HOMEPAGE=\"" substr($0, index($0,"= ")+2) "\""}' >> build.sh
         cat .SRCINFO | awk 'BEGIN{res=""} $1 == "depends" {if (res == "") {res = substr($0, index($0,"= ")+2)} else {res = (res ", " substr($0, index($0,"= ")+2))}} END{print "TERMUX_PKG_DEPENDS=\"" res "\""}' >> build.sh
-        sed -i 's/$PKGNAME/${{steps.package-name.outputs.package-name}}/g' termux-build.sh >> build.sh
-      working-directory: ./clients
-    - name: extract package name
-      id: package-name
-      run: |
-        cat .SRCINFO | awk '$1 == "pkgname" {print "package-name=" substr($0, index($0,"= ")+2)}' >> $GITHUB_OUTPUT
+        sed 's/$PKGNAME/${{steps.package-name.outputs.package-name}}/g' termux-build.sh >> build.sh
       working-directory: ./clients
     - name: prepare package directory
       run: mkdir -p ./termux-packages/packages/${{steps.package-name.outputs.package-name}} && tar --zstd -xvf *.pkg.tar.zst -C ./termux-packages/packages/${{steps.package-name.outputs.package-name}}
