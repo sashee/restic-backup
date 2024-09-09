@@ -12,7 +12,7 @@ termux_step_make_install() {
 	mkdir -p "$TERMUX_PREFIX/bin"
 	ln -s ../lib/$TERMUX_PKG_NAME/index.js $TERMUX_PREFIX/bin/$TERMUX_PKG_NAME
 	echo "lib"
-	ln "$TERMUX_PREFIX/lib/$TERMUS_PKG_NAME"
+	ls "$TERMUX_PREFIX/lib/$TERMUX_PKG_NAME"
 	echo "bin"
-	ln "$TERMUX_PREFIX/bin"
+	ls "$TERMUX_PREFIX/bin"
 }
