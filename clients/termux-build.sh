@@ -1,3 +1,5 @@
+TERMUX_PKG_SRCURL="termux-packages/termux-package.tar.gz"
+
 termux_step_make_install() {
 	echo "installing!"
 	ls

@@ -228,6 +228,8 @@ jobs:
       run: tar tf termux-package.tar.gz | head -z -n 1 | awk -F/ '{print "package-name=" $1}' >> $GITHUB_OUTPUT
     - name: extract package
       run: tar -xvf ./termux-package.tar.gz -C ./termux-packages/packages
+    - name: copy package gz
+      run: cp ./termux-package.tar.gz ./termux-packages
     - name: run run-docker.sh
       run: ./scripts/run-docker.sh ./build-package.sh -i ${{steps.package-name.outputs.package-name}}
       working-directory: ./termux-packages
