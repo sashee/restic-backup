@@ -238,10 +238,10 @@ jobs:
       working-directory: ./termux-packages
     - name: files
       run: ls -R
-      working-directory: ./termux-packages/packages
+      working-directory: ./termux-packages/output
     - name: files
       run: ls -R
-      working-directory: ./termux-packages/packages/${{steps.package-name.outputs.package-name}}
+      working-directory: ./termux-packages/debs
 
   test-deb-package:
     runs-on: ubuntu-latest
