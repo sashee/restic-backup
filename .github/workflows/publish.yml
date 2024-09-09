@@ -233,6 +233,15 @@ jobs:
     - name: run run-docker.sh
       run: ./scripts/run-docker.sh ./build-package.sh -i ${{steps.package-name.outputs.package-name}}
       working-directory: ./termux-packages
+    - name: files
+      run: ls -R
+      working-directory: ./termux-packages
+    - name: files
+      run: ls -R
+      working-directory: ./termux-packages/packages
+    - name: files
+      run: ls -R
+      working-directory: ./termux-packages/packages/${{steps.package-name.outputs.package-name}}
 
   test-deb-package:
     runs-on: ubuntu-latest
