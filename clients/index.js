@@ -12,7 +12,7 @@ console.log(process.argv);
 
 if(process.argv[2] === "check") {
 	console.log(AwsClient);
-	const {stdout} = await execFile("restic", ["version"], {env: {}});
+	const {stdout} = await execFile("restic", ["version"], {env: {}, shell: true});
 	console.log(stdout);
 	const packageJsonVersion = JSON.parse(await fs.readFile(new URL("./package.json", import.meta.url), "utf8")).version;
 	console.log(packageJsonVersion);
