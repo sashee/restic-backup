@@ -7,7 +7,7 @@ termux_step_make_install() {
 	ls .
 	pwd
 	ls -R /home/builder/termux-packages/packages/$TERMUX_PKG_NAME
-	install -Dm700 8086tiny "$TERMUX_PREFIX"/libexec/8086tiny
-	install -Dm600 bios "$TERMUX_PREFIX"/share/8086tiny/bios.bin
-	install -Dm600 fd.img "$TERMUX_PREFIX"/share/8086tiny/dos.img
+	install -Dt "$TERMUX_PREFIX/lib/$TERMUX_PKG_NAME" /home/builder/termux-packages/packages/$TERMUX_PKG_NAME/usr/lib/$TERMUX_PKG_NAME
+	ls -R $TERMUX_PREFIX
+	echo $TERMUX_DEBDIR
 }
