@@ -235,7 +235,7 @@ jobs:
       run: ls -R
       working-directory: ./termux-packages/output
     - name: add termux_ prefix
-      run: rename 's/(.*)$/termux_$1/' *.deb
+      run: ls | grep .deb | xargs -I fileName mv fileName termux_fileName
       working-directory: ./termux-packages/output
     - name: Attest
       id: attest
