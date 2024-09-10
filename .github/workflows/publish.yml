@@ -141,7 +141,7 @@ jobs:
         BUNDLE: ${{steps.attest.outputs.bundle-path}}
     - uses: actions/upload-artifact@v4
       with:
-        name: aadeb-package
+        name: deb-package
         path: './*.deb'
         if-no-files-found: error
     - name: Release
@@ -202,7 +202,7 @@ jobs:
       run: tar -czvf termux-package.tar.gz -C ./termux-packages/packages ${{steps.package-name.outputs.package-name}}
     - uses: actions/upload-artifact@v4
       with:
-        name: 00_prepared-termux-package
+        name: prepared-termux-package
         path: './termux-package.tar.gz'
         if-no-files-found: error
 
@@ -220,7 +220,7 @@ jobs:
       run: git clone https://github.com/termux/termux-packages.git
     - uses: actions/download-artifact@v4
       with:
-        name: 00_prepared-termux-package
+        name: prepared-termux-package
     - name: extract package name
       id: package-name
       run: tar tf termux-package.tar.gz | head -z -n 1 | awk -F/ '{print "package-name=" $1}' >> $GITHUB_OUTPUT
@@ -271,7 +271,7 @@ jobs:
       run: apt update && apt install -y nodejs
     - uses: actions/download-artifact@v4
       with:
-        name: aadeb-package
+        name: deb-package
     - name: Display structure of downloaded files
       run: ls -R
     - name: Install the package
