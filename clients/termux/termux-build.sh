@@ -3,7 +3,7 @@ termux_step_make_install() {
 	cp -R /home/builder/termux-packages/packages/$TERMUX_PKG_NAME/usr/lib/$TERMUX_PKG_NAME/* "$TERMUX_PREFIX/lib/$TERMUX_PKG_NAME"
 	mkdir -p "$TERMUX_PREFIX/bin"
 	cat << EOF > $TERMUX_PREFIX/bin/$TERMUX_PKG_NAME
-#!/data/data/com.termux/files/usr/bin/bash
+#!$TERMUX_PREFIX/bin/bash
 echo "Running script!"
 RUN_IN_SHELL=true $TERMUX_PREFIX/lib/$TERMUX_PKG_NAME/index.js
 EOF
