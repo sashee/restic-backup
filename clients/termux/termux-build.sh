@@ -5,6 +5,7 @@ termux_step_make_install() {
 	cat << EOF > $TERMUX_PREFIX/bin/$TERMUX_PKG_NAME
 #!/data/data/com.termux/files/usr/bin/bash
 echo "Running script!"
-RUN_IN_SHELL=true ../lib/$TERMUX_PKG_NAME/index.js
+RUN_IN_SHELL=true $TERMUX_PREFIX/lib/$TERMUX_PKG_NAME/index.js
 EOF
+	chmod +x $TERMUX_PREFIX/bin/$TERMUX_PKG_NAME
 }
