@@ -9,10 +9,12 @@ import childProcess from "node:child_process";
 const execFile = util.promisify(childProcess.execFile);
 
 console.log(process.argv);
+const runInShell = process.env.RUN_IN_SHELL === "true";
+console.log(JSON.stringify(process.env, undefined, 4))
 
 if(process.argv[2] === "check") {
 	console.log(AwsClient);
-	const {stdout} = await execFile("restic", ["version"], {env: {}, shell: true});
+	const {stdout} = await execFile("restic", ["version"], {env: {}, shell: runInShell});
 	console.log(stdout);
 	const packageJsonVersion = JSON.parse(await fs.readFile(new URL("./package.json", import.meta.url), "utf8")).version;
 	console.log(packageJsonVersion);
@@ -78,7 +80,7 @@ const runCommand = async ({label, command, args, env, processStdout}) => {
 			env,
 			// 5 MB, lambda invocation limit is 6 MB
 			maxBuffer: 5 * 1024 * 1024,
-			shell: true,
+			shell: runInShell,
 		});
 		console.log(JSON.stringify({stdout: (processStdout ?? ((val) => val))(stdout), stderr}));
 		await sendMonitoring({pathname: "/log", searchParams: {runid: runId, label}, method: "POST", body: JSON.stringify({stdout: (processStdout ?? ((val) => val))(stdout), stderr})}).catch((e) => console.error(e));
