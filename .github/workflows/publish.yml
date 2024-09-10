@@ -70,7 +70,7 @@ jobs:
     - name: Install the package
       run: pacman -U --noconfirm *.pkg.tar.zst
     - name: Run the check
-      run: /usr/lib/restic-backup-client/index.js check
+      run: /usr/lib/serverless-restic-backup-client/index.js check
 
   build-deb-package:
     runs-on: ubuntu-latest
@@ -277,5 +277,5 @@ jobs:
     - name: Install the package
       run: apt update && apt install -y ./*.deb
     - name: Run the check
-      run: /usr/lib/restic-backup-client/index.js check
+      run: /usr/lib/serverless-restic-backup-client/index.js check
 
