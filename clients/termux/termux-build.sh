@@ -12,19 +12,19 @@ EOF
 
 termux_step_create_debscripts () {
 	cat << EOF > postinst
-#!\$TERMUX_PREFIX/bin/bash
+#!$TERMUX_PREFIX/bin/bash
 echo "Running postinst!"
 echo $TERMUX_PKG_NAME
-mkdir -p \$TERMUX_PREFIX/var/$TERMUX_PKG_NAME
-echo "postinst called" >> \$TERMUX_PREFIX/var/$TERMUX_PKG_NAME/log
+mkdir -p $TERMUX_PREFIX/var/$TERMUX_PKG_NAME
+echo "postinst called" >> $TERMUX_PREFIX/var/$TERMUX_PKG_NAME/log
 EOF
 	chmod 0755 postinst
 	cat << EOF > prerm
-#!\$TERMUX_PREFIX/bin/bash
+#!$TERMUX_PREFIX/bin/bash
 echo "Running prerm!"
 echo $TERMUX_PKG_NAME
-mkdir -p \$TERMUX_PREFIX/var/$TERMUX_PKG_NAME
-echo "prerm called" >> \$TERMUX_PREFIX/var/$TERMUX_PKG_NAME/log
+mkdir -p $TERMUX_PREFIX/var/$TERMUX_PKG_NAME
+echo "prerm called" >> $TERMUX_PREFIX/var/$TERMUX_PKG_NAME/log
 EOF
 	chmod 0755 prerm
 }
