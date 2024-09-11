@@ -53,7 +53,15 @@ const callWithRetry = async (fn, depth = 0) => {
 	}
 }
 
-const monitoringAwsSecretAccessKey = await fs.readFile(path.join(process.env.CREDENTIALS_DIRECTORY, "monitoring_aws_secret_access_key"));
+const readCredential = async (credentialName, envVarName) => {
+	if (process.env.CREDENTIALS_DIRECTORY) {
+		return await fs.readFile(path.join(process.env.CREDENTIALS_DIRECTORY, credentialName));
+	}else {
+		return process.env[envVarName];
+	}
+}
+
+const monitoringAwsSecretAccessKey = await readCredential("monitoring_aws_secret_access_key", "MONITORING_AWS_SECRET_ACCESS_KEY");
 const aws = new AwsClient({accessKeyId: process.env.MONITORING_AWS_ACCESS_KEY_ID, secretAccessKey: monitoringAwsSecretAccessKey});
 const sendMonitoring = async ({pathname, searchParams, method, body}) => {
 	return callWithRetry(async () => {
@@ -72,7 +80,7 @@ const sendMonitoring = async ({pathname, searchParams, method, body}) => {
 	});
 }
 
-const awsSecretAccessKey = await fs.readFile(path.join(process.env.CREDENTIALS_DIRECTORY, "aws_secret_access_key"));
+const awsSecretAccessKey = await readCredential("aws_secret_access_key", "AWS_SECRET_ACCESS_KEY");
 
 const runCommand = async ({label, command, args, env, processStdout}) => {
 	try {
@@ -99,7 +107,7 @@ const runCommand = async ({label, command, args, env, processStdout}) => {
 await sendMonitoring({pathname: "/run", searchParams: {runid: runId, monitor: process.env.MONITORING_MONITOR_NAME}, method: "GET"});
 
 try {
-	const resticPassword = await fs.readFile(path.join(process.env.CREDENTIALS_DIRECTORY, "restic_password"));
+	const resticPassword = await readCredential("restic_password", "RESTIC_PASSWORD");
 	const packageJsonVersion = JSON.parse(await fs.readFile(new URL("./package.json", import.meta.url), "utf8")).version;
 
 	await runCommand({label: "version", command: "restic", args: ["version"], env: {}, processStdout: (stdout) => {
