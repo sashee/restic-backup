@@ -9,3 +9,18 @@ RUN_IN_SHELL=true $TERMUX_PREFIX/lib/$TERMUX_PKG_NAME/index.js
 EOF
 	chmod +x $TERMUX_PREFIX/bin/$TERMUX_PKG_NAME
 }
+
+termux_step_create_debscripts () {
+	cat << EOF > postinst
+#!$TERMUX_PREFIX/bin/bash
+echo "Running postinst!"
+echo "postinst called" >> log
+EOF
+	chmod 0755 postinst
+	cat << EOF > prerm
+#!$TERMUX_PREFIX/bin/bash
+echo "Running prerm!"
+echo "prerm called" >> log
+EOF
+	chmod 0755 prerm
+}
