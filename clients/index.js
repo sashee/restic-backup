@@ -86,7 +86,10 @@ const runCommand = async ({label, command, args, env, processStdout}) => {
 		// if run in shell quote the args
 		// otherwise the empty argument after --group-by will be ignored
 		const {stdout, stderr} = await execFile(command, args.map((arg) => runInShell ? `'${arg}'` : arg), {
-			env,
+			env: {
+				...env,
+				TMPDIR: process.env.TMPDIR,
+			},
 			// 5 MB, lambda invocation limit is 6 MB
 			maxBuffer: 5 * 1024 * 1024,
 			shell: runInShell,
