@@ -23,7 +23,7 @@ EOF
 termux_step_create_debscripts () {
 	cat << EOF > prerm
 #!$TERMUX_PREFIX/bin/bash
-EOF
 (termux-job-scheduler --job-id 619396956 --cancel) || true
+EOF
 	chmod 0755 prerm
 }
