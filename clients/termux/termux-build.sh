@@ -12,8 +12,21 @@ case "\${1}" in
 		termux-job-scheduler --job-id 619396956 --period-ms 86400000 --script $TERMUX_PREFIX/bin/$TERMUX_PKG_NAME --network unmetered --persisted true
 
 		exit 0;;
+	"check")
+		echo "Running check!"
+		RUN_IN_SHELL=true $TERMUX_PREFIX/lib/$TERMUX_PKG_NAME/index.js check
+
+		exit 0;;
 	*)
-		RUN_IN_SHELL=true $TERMUX_PREFIX/lib/$TERMUX_PKG_NAME/index.js "\$@"
+	for dir in "$TERMUX_PREFIX/etc/$TERMUX_PKG_NAME/configs"/*
+	do
+		(
+			set -o allexport
+			source "\$dir/config"
+			set +o allexport
+			RUN_IN_SHELL=true $TERMUX_PREFIX/lib/$TERMUX_PKG_NAME/index.js
+		)
+	done
 	;;
 esac
 EOF

@@ -32,14 +32,9 @@ RestrictAddressFamilies=AF_INET AF_INET6
 ProtectProc=noaccess
 RemoveIPC=true
 PrivateUsers=true
-User=sashee
 
 ProtectSystem=strict
 
-ProtectHome=tmpfs
-BindReadOnlyPaths=/home/sashee/laptop-backup
-BindReadOnlyPaths=/home/sashee/Mobile-backup
-BindReadOnlyPaths=/home/sashee/safe
-BindReadOnlyPaths=/home/sashee/Notes
+ProtectHome=read-only
 
 ExecStart=/usr/lib/restic-backup-client/index.js

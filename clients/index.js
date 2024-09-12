@@ -10,7 +10,6 @@ const execFile = util.promisify(childProcess.execFile);
 
 console.log(process.argv);
 const runInShell = process.env.RUN_IN_SHELL === "true";
-console.log(JSON.stringify(process.env, undefined, 4))
 
 if(process.argv[2] === "check") {
 	console.log(AwsClient);
@@ -84,7 +83,9 @@ const awsSecretAccessKey = await readCredential("aws_secret_access_key", "AWS_SE
 
 const runCommand = async ({label, command, args, env, processStdout}) => {
 	try {
-		const {stdout, stderr} = await execFile(command, args, {
+		// if run in shell quote the args
+		// otherwise the empty argument after --group-by will be ignored
+		const {stdout, stderr} = await execFile(command, args.map((arg) => runInShell ? `'${arg}'` : arg), {
 			env,
 			// 5 MB, lambda invocation limit is 6 MB
 			maxBuffer: 5 * 1024 * 1024,
