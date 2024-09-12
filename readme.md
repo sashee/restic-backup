@@ -7,6 +7,7 @@ sudo mkdir -p /etc/systemd/system/serverless-restic-backup-client@.service.d
 /etc/systemd/system/serverless-restic-backup-client@.service.d/override.conf
 
 ```
+[Service]
 # replace with the username
 User=sashee
 ProtectHome=tmpfs

@@ -37,4 +37,4 @@ ProtectSystem=strict
 
 ProtectHome=read-only
 
-ExecStart=/usr/lib/restic-backup-client/index.js
+ExecStart=/usr/lib/serverless-restic-backup-client/index.js
