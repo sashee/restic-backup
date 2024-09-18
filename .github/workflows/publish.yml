@@ -111,14 +111,14 @@ jobs:
         name: srcinfo
     - name: setup control file
       run: |
-        cat ./SRCINFO | awk '$1 == "pkgname" {print "Package: " substr($0, index($0,"= ")+2)}' >> control
-        cat ./SRCINFO | awk '$1 == "pkgver" {version = substr($0, index($0,"= ")+2)} $1 == "pkgrel" {rel = substr($0, index($0,"= ")+2)} END{print "Version: " version "-" rel}' >> control
-        cat ./SRCINFO | awk '$1 == "pkgdesc" {print "Description: " substr($0, index($0,"= ")+2)}' >> control
-        cat ./SRCINFO | awk '$1 == "arch" {val = substr($0, index($0,"= ")+2); print "Architecture:", (val == "any") ? "all" : val}' >> control
-        cat ./SRCINFO | awk '$1 == "license" {print "License: " substr($0, index($0,"= ")+2)}' >> control
+        cat ../SRCINFO | awk '$1 == "pkgname" {print "Package: " substr($0, index($0,"= ")+2)}' >> control
+        cat ../SRCINFO | awk '$1 == "pkgver" {version = substr($0, index($0,"= ")+2)} $1 == "pkgrel" {rel = substr($0, index($0,"= ")+2)} END{print "Version: " version "-" rel}' >> control
+        cat ../SRCINFO | awk '$1 == "pkgdesc" {print "Description: " substr($0, index($0,"= ")+2)}' >> control
+        cat ../SRCINFO | awk '$1 == "arch" {val = substr($0, index($0,"= ")+2); print "Architecture:", (val == "any") ? "all" : val}' >> control
+        cat ../SRCINFO | awk '$1 == "license" {print "License: " substr($0, index($0,"= ")+2)}' >> control
         cat PKGBUILD | awk 'index($0, "Maintainer:") {print "Maintainer: " substr($0, index($0,": ")+2)}' >> control
-        cat ./SRCINFO | awk '$1 == "url" {print "Homepage: " substr($0, index($0,"= ")+2)}' >> control
-        cat ./SRCINFO | awk 'BEGIN{res=""} $1 == "depends" {if (res == "") {res = substr($0, index($0,"= ")+2)} else {res = (res ", " substr($0, index($0,"= ")+2))}} END{print "Depends: " res}' >> control
+        cat ../SRCINFO | awk '$1 == "url" {print "Homepage: " substr($0, index($0,"= ")+2)}' >> control
+        cat ../SRCINFO | awk 'BEGIN{res=""} $1 == "depends" {if (res == "") {res = substr($0, index($0,"= ")+2)} else {res = (res ", " substr($0, index($0,"= ")+2))}} END{print "Depends: " res}' >> control
       working-directory: ./clients
     - name: show control file
       run: cat control
@@ -183,17 +183,17 @@ jobs:
     - name: extract package name
       id: package-name
       run: |
-        cat ./SRCINFO | awk '$1 == "pkgname" {print "package-name=" substr($0, index($0,"= ")+2)}' >> $GITHUB_OUTPUT
+        cat ../SRCINFO | awk '$1 == "pkgname" {print "package-name=" substr($0, index($0,"= ")+2)}' >> $GITHUB_OUTPUT
       working-directory: ./clients
     - name: setup build.sh
       run: |
-        cat ./SRCINFO | awk '$1 == "pkgver" {version = substr($0, index($0,"= ")+2)} $1 == "pkgrel" {rel = substr($0, index($0,"= ")+2)} END{print "TERMUX_PKG_VERSION=\"" version "-" rel "\""}' >> build.sh
-        cat ./SRCINFO | awk '$1 == "pkgdesc" {print "TERMUX_PKG_DESCRIPTION=\"" substr($0, index($0,"= ")+2) "\""}' >> build.sh
-        cat ./SRCINFO | awk '$1 == "arch" {val = substr($0, index($0,"= ")+2); print "TERMUX_PKG_PLATFORM_INDEPENDENT=" ((val == "any") ? "true" : "false")}' >> build.sh
-        cat ./SRCINFO | awk '$1 == "license" {print "TERMUX_PKG_LICENSE=\"" substr($0, index($0,"= ")+2) "\""}' >> build.sh
+        cat ../SRCINFO | awk '$1 == "pkgver" {version = substr($0, index($0,"= ")+2)} $1 == "pkgrel" {rel = substr($0, index($0,"= ")+2)} END{print "TERMUX_PKG_VERSION=\"" version "-" rel "\""}' >> build.sh
+        cat ../SRCINFO | awk '$1 == "pkgdesc" {print "TERMUX_PKG_DESCRIPTION=\"" substr($0, index($0,"= ")+2) "\""}' >> build.sh
+        cat ../SRCINFO | awk '$1 == "arch" {val = substr($0, index($0,"= ")+2); print "TERMUX_PKG_PLATFORM_INDEPENDENT=" ((val == "any") ? "true" : "false")}' >> build.sh
+        cat ../SRCINFO | awk '$1 == "license" {print "TERMUX_PKG_LICENSE=\"" substr($0, index($0,"= ")+2) "\""}' >> build.sh
         cat PKGBUILD | awk 'index($0, "Maintainer:") {print "TERMUX_PKG_MAINTAINER=\"" substr($0, index($0,": ")+2) "\""}' >> build.sh
-        cat ./SRCINFO | awk '$1 == "url" {print "TERMUX_PKG_HOMEPAGE=\"" substr($0, index($0,"= ")+2) "\""}' >> build.sh
-        cat ./SRCINFO | awk 'BEGIN{res="termux-api"} $1 == "depends" {val = substr($0, index($0,"= ")+2); if (val == "nodejs") {val = "nodejs | nodejs-lts"}; if (res == "") {res = val} else {res = (res ", " val)}} END{print "TERMUX_PKG_DEPENDS=\"" res "\""}' >> build.sh
+        cat ../SRCINFO | awk '$1 == "url" {print "TERMUX_PKG_HOMEPAGE=\"" substr($0, index($0,"= ")+2) "\""}' >> build.sh
+        cat ../SRCINFO | awk 'BEGIN{res="termux-api"} $1 == "depends" {val = substr($0, index($0,"= ")+2); if (val == "nodejs") {val = "nodejs | nodejs-lts"}; if (res == "") {res = val} else {res = (res ", " val)}} END{print "TERMUX_PKG_DEPENDS=\"" res "\""}' >> build.sh
         cat termux/termux-build.sh >> build.sh
       working-directory: ./clients
     - name: prepare package directory
