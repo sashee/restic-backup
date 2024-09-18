@@ -14,9 +14,10 @@ const runInShell = process.env.RUN_IN_SHELL === "true";
 if(process.argv[2] === "check") {
 	console.log(AwsClient);
 	const {stdout} = await execFile("restic", ["version"], {env: {}, shell: runInShell});
-	console.log(stdout);
+	console.log("Restic version", stdout);
 	const packageJsonVersion = JSON.parse(await fs.readFile(new URL("./package.json", import.meta.url), "utf8")).version;
-	console.log(packageJsonVersion);
+	console.log("Package version", packageJsonVersion);
+	console.log("Node version", process.version)
 
 	process.exit(0);
 }
@@ -118,6 +119,7 @@ try {
 		return {
 			resticVersion: stdout,
 			packageVersion: packageJsonVersion,
+			nodeVersion: process.version,
 		};
 	}});
 	await runCommand({label: "unlock", command: "restic", args: ["unlock"], env: {AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID, RESTIC_REPOSITORY: process.env.RESTIC_REPOSITORY, AWS_SECRET_ACCESS_KEY: awsSecretAccessKey, RESTIC_PASSWORD: resticPassword}});
