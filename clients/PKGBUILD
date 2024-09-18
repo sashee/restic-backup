@@ -1,7 +1,7 @@
 # Maintainer: Tamas Sallai <tamas.sallai@advancedweb.hu>
 pkgname="serverless-restic-backup-client"
-pkgver="0.0.1"
-pkgrel="2"
+pkgver=0.0.0
+pkgrel=1
 pkgdesc="Restic backup with a serverless monitoring"
 arch=(any)
 license=("MPL-2.0")
@@ -11,18 +11,15 @@ depends=('nodejs' 'restic')
 makedepends=('npm' 'jq')
 sha512sums=("SKIP" "SKIP" "SKIP" "SKIP" "SKIP")
 
+pkgver() {
+	cat package.json | jq -r '.version'
+}
+
 build() {
 	npm ci
 }
 
 package() {
-	VERSION="$pkgver-$pkgrel"
-	PACKAGE_JSON_VERSION=$(cat package.json| jq -r '.version')
-	
-	if [ "$VERSION" != "$PACKAGE_JSON_VERSION" ]; then
-		echo "version mismatch $VERSION != $PACKAGE_JSON_VERSION"
-		exit 1
-	fi
   mkdir -p "${pkgdir}/usr/lib/${pkgname}"
   cp -Lr "${srcdir}/node_modules" "${pkgdir}/usr/lib/${pkgname}/node_modules"
   cp "${srcdir}/index.js" "${pkgdir}/usr/lib/${pkgname}/index.js"
