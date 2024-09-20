@@ -10,6 +10,25 @@ Parameters:
     Type: String
     Default: "base"
     Description: "Comma-separated list of available monitors"
+  AlertIfMissedEventsForDays:
+    Type: Number
+    MinValue: 1
+    Default: 3
+    Description: "Send an alert if there were no successful backup in this amount of days"
+  ReportInterval:
+    Type: Number
+    MinValue: 1
+    Default: 30
+    Description: "Send a report every <n> days"
+  LambdaConcurrency:
+    Type: Number
+    MinValue: 0
+    Default: 0
+    Description: "Reserves (and limits) the lambdas to this amount of concurrency. Specify 0 to disable (no limit). Should set to 1 if the account has more than the minimum concurrency required, otherwise 0."
+
+Conditions:
+  SetLambdaConcurrency: !Not [!Equals [!Ref LambdaConcurrency, 0]]
+
 Resources:
   Bucket:
     Type: AWS::S3::Bucket
@@ -118,7 +137,7 @@ Resources:
                 - 'arn:${AWS::Partition}:pipes:${AWS::Region}:${AWS::AccountId}:pipe/${PipeName}'
                 - PipeName: !Select [2, !Split ['/', !Ref AWS::StackId]]
       Policies:
-        - PolicyName: allow-logs
+        - PolicyName: permissions
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -176,7 +195,7 @@ Resources:
           Action:
           - sts:AssumeRole
       Policies:
-        - PolicyName: allow-logs
+        - PolicyName: permissions
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -204,7 +223,7 @@ Resources:
       Runtime: nodejs20.x
       Role: !GetAtt DisablerLambdaExecutionRole.Arn
       Handler: index.handler
-#     ReservedConcurrentExecutions: 1
+      ReservedConcurrentExecutions: !If [SetLambdaConcurrency, !Ref LambdaConcurrency, !Ref "AWS::NoValue"]
       Timeout: 30
       Code:
         ZipFile: |
@@ -313,15 +332,11 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties: 
       AttributeDefinitions: 
-        - AttributeName: "InternalID"
+        - AttributeName: "InternalID#Label"
           AttributeType: "S"
-        - AttributeName: "Time"
-          AttributeType: "N"
       KeySchema: 
-        - AttributeName: "InternalID"
+        - AttributeName: "InternalID#Label"
           KeyType: "HASH"
-        - AttributeName: "Time"
-          KeyType: "RANGE"
       BillingMode: PAY_PER_REQUEST
       OnDemandThroughput:
         MaxReadRequestUnits: 5
@@ -346,7 +361,7 @@ Resources:
           Action:
           - sts:AssumeRole
       Policies:
-        - PolicyName: allow-logs
+        - PolicyName: permissions
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -375,7 +390,7 @@ Resources:
       Runtime: nodejs20.x
       Role: !GetAtt MonitoringLambdaExecutionRole.Arn
       Handler: index.handler
-#     ReservedConcurrentExecutions: 1
+      ReservedConcurrentExecutions: !If [SetLambdaConcurrency, !Ref LambdaConcurrency, !Ref "AWS::NoValue"]
       Timeout: 30
       Code:
         ZipFile: |
@@ -448,15 +463,16 @@ Resources:
               await client.send(new PutItemCommand({
                 TableName: process.env.LogsTable,
                 Item: {
+                  "InternalID#Label": {S: `${internalId}#${label}`},
                   InternalID: {S: internalId},
-                  Time: {N: String(new Date().getTime())},
                   Label: {S: label},
-                  Message: {B: compressed.toString("base64")},
+                  Time: {N: String(new Date().getTime())},
+                  Message: {B: compressed},
                   ttl: {N: String(Math.round((new Date().getTime() + 365 * 24 * 60 * 60 * 1000) / 1000))},
                 },
                 ConditionExpression: "attribute_not_exists(#pk)",
                 ExpressionAttributeNames: {
-                  "#pk": "InternalID",
+                  "#pk": "InternalID#Label",
                 },
               }));
             } else if (["/success", "/fail"].includes(event.requestContext.http.path)) {
@@ -509,6 +525,383 @@ Resources:
     Properties:
       AuthType: AWS_IAM
       TargetFunctionArn: !GetAtt MonitoringLambdaFunction.Arn
+# alerting lambda
+  AlertingLambdaLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      RetentionInDays: 365
+  AlertingLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: permissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - 'logs:PutLogEvents'
+              - 'logs:CreateLogStream'
+              Resource: !Sub "${AlertingLambdaLogGroup.Arn}:*"
+            - Effect: Allow
+              Action:
+              - 'dynamodb:Query'
+              Resource: !Sub "${RunsTable.Arn}/index/ByMonitor"
+            - Effect: Allow
+              Action:
+              - 'sns:Publish'
+              Resource: !Ref NotificationSNSTopicArn
+  AlertingLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs20.x
+      Role: !GetAtt AlertingLambdaExecutionRole.Arn
+      Handler: index.handler
+      ReservedConcurrentExecutions: !If [SetLambdaConcurrency, !Ref LambdaConcurrency, !Ref "AWS::NoValue"]
+      Timeout: 30
+      Code:
+        ZipFile: |
+          const {DynamoDBClient, QueryCommand, paginateQuery} = require("@aws-sdk/client-dynamodb");
+          const {SNSClient, PublishCommand} = require("@aws-sdk/client-sns");
+
+          exports.handler = async (event) => {
+            console.log(event);
+            const endTime = new Date(event.scheduledTime);
+            const startTime = new Date(endTime.getTime() - process.env.AlertIfMissedEventsForDays * 1000 * 60 * 60 * 24);
+            console.log({endTime, startTime});
+            const client = new DynamoDBClient();
+            const monitorItems = await Promise.all(process.env.Monitors.split(",").map(async (monitor) => {
+              const items = [];
+              for await (const page of paginateQuery({client}, {
+                TableName: process.env.RunsTable,
+                IndexName: "ByMonitor",
+                KeyConditionExpression: "#Monitor = :monitor and #StartTime between :startTime and :endTime",
+                ExpressionAttributeNames: {
+                  "#Monitor": "Monitor",
+                  "#StartTime": "StartTime",
+                },
+                ExpressionAttributeValues: {
+                  ":monitor": {S: monitor},
+                  ":startTime": {N: String(startTime.getTime())},
+                  ":endTime": {N: String(endTime.getTime())},
+                },
+              })) {
+                items.push(...page.Items);
+              }
+              return {monitor, items};
+            }));
+            const monitorErrors = monitorItems.filter(({items}) => !items.some((item) => item.Success.BOOL));
+            if (monitorErrors.length > 0) {
+              console.log(monitorErrors);
+              const snsClient = new SNSClient({region: process.env.NotificationSNSTopicArn.split(":")[3]});
+              await snsClient.send(new PublishCommand({
+                Message: `Some monitors did not report success in the past ${process.env.AlertIfMissedEventsForDays} day(s): ${monitorErrors.map(({monitor}) => monitor)}`,
+                TopicArn: process.env.NotificationSNSTopicArn,
+              }));
+            }
+          };
+      LoggingConfig:
+        LogGroup: !Ref AlertingLambdaLogGroup
+        LogFormat: JSON
+      Environment:
+        Variables:
+          RunsTable: !GetAtt RunsTable.Arn
+          Monitors: !Ref Monitors
+          AlertIfMissedEventsForDays: !Ref AlertIfMissedEventsForDays
+          NotificationSNSTopicArn: !Ref NotificationSNSTopicArn
+  AlertingSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      FlexibleTimeWindow: 
+        Mode: "OFF"
+      ScheduleExpression: "rate(1 day)"
+      Target: 
+        Arn: !GetAtt AlertingLambdaFunction.Arn
+        Input: !Sub '{"scheduledTime": "<aws.scheduler.scheduled-time>", "functionUrl": "${ReportingLambdaUrl.FunctionUrl}"}'
+        RoleArn: !GetAtt AlertingScheduleRole.Arn
+  AlertingScheduleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - scheduler.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: permissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - 'lambda:InvokeFunction'
+              Resource: !GetAtt AlertingLambdaFunction.Arn
+# reporting lambda
+  ReportTokensTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - AttributeName: "Token"
+          AttributeType: "S"
+      KeySchema: 
+        - AttributeName: "Token"
+          KeyType: "HASH"
+      BillingMode: PAY_PER_REQUEST
+      OnDemandThroughput:
+        MaxReadRequestUnits: 5
+        MaxWriteRequestUnits: 5
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+  ReportingLambdaLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      RetentionInDays: 365
+  ReportingLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: permissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - 'logs:PutLogEvents'
+              - 'logs:CreateLogStream'
+              Resource: !Sub "${ReportingLambdaLogGroup.Arn}:*"
+            - Effect: Allow
+              Action:
+              - 'dynamodb:Query'
+              Resource: !Sub "${RunsTable.Arn}/index/ByMonitor"
+            - Effect: Allow
+              Action:
+              - 'dynamodb:GetItem'
+              Resource: !GetAtt LogsTable.Arn
+            - Effect: Allow
+              Action:
+              - 'dynamodb:GetItem'
+              - 'dynamodb:PutItem'
+              Resource: !GetAtt ReportTokensTable.Arn
+            - Effect: Allow
+              Action:
+              - 'sns:Publish'
+              Resource: !Ref NotificationSNSTopicArn
+  ReportingLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs20.x
+      Role: !GetAtt ReportingLambdaExecutionRole.Arn
+      Handler: index.handler
+      ReservedConcurrentExecutions: !If [SetLambdaConcurrency, !Ref LambdaConcurrency, !Ref "AWS::NoValue"]
+      Timeout: 30
+      Code:
+        ZipFile: |
+          const {DynamoDBClient, QueryCommand, paginateQuery, GetItemCommand} = require("@aws-sdk/client-dynamodb");
+          const {SNSClient, PublishCommand} = require("@aws-sdk/client-sns");
+          const crypto = require("crypto");
+          const zlib = require("node:zlib");
+          const {promisify} = require("node:util");
+
+          const getLog = (client) => async (internalId, label) => {
+            const item = await client.send(new GetItemCommand({
+              TableName: process.env.LogsTable,
+              Key: {
+                "InternalID#Label": {S: `${internalId}#${label}`},
+              },
+            }));
+            if (item.Item) {
+              const message = Buffer.from(item.Item.Message.B);
+              const decompressed = await promisify(zlib.brotliDecompress)(message);
+              return decompressed.toString();
+            }else {
+              return undefined;
+            }
+          }
+
+          const getEvents = (client) => async (startTime, endTime) => {
+            return Promise.all(process.env.Monitors.split(",").map(async (monitor) => {
+              const results = [];
+              for await (const page of paginateQuery({client}, {
+                TableName: process.env.RunsTable,
+                IndexName: "ByMonitor",
+                KeyConditionExpression: "#Monitor = :monitor and #StartTime between :startTime and :endTime",
+                ExpressionAttributeNames: {
+                  "#Monitor": "Monitor",
+                  "#StartTime": "StartTime",
+                },
+                ExpressionAttributeValues: {
+                  ":monitor": {S: monitor},
+                  ":startTime": {N: String(startTime.getTime())},
+                  ":endTime": {N: String(endTime.getTime())},
+                },
+              })) {
+                const res = await Promise.all(page.Items.map(async (item) => {
+                  if (item.Success?.BOOL) {
+                    // success
+                    const [version, backup] = await Promise.all([
+                      getLog(client)(item.InternalID.S, "version"),
+                      getLog(client)(item.InternalID.S, "backup"),
+                    ]);
+                    const safeRun = (fn) => {
+                      try {
+                        return fn();
+                      }catch(e) {
+                        console.error(e);
+                      }
+                    }
+                    const versionString = safeRun(() => {
+                      if (version) {
+                        const versionJson = JSON.parse(version);
+                        return `${versionJson.stdout.packageVersion} (${versionJson.stdout.resticVersion} ; ${versionJson.stdout.nodeVersion})`;
+                      }
+                    });
+                    const backupStats = safeRun(() => {
+                      if (backup) {
+                        const backupJson = JSON.parse(backup);
+                        return {
+                          total_bytes_processed: backupJson.stdout.total_bytes_processed,
+                          total_files_processed: backupJson.stdout.total_files_processed,
+                        }
+                      }
+                    });
+                    return {
+                      status: "SUCCESS",
+                      startTime: new Date(Number(item.StartTime.N)),
+                      versionString,
+                      backupStats,
+                    };
+                  }else if (item.Success){
+                    // failed
+                    return {
+                      status: "FAILED",
+                      startTime: new Date(Number(item.StartTime.N)),
+                      endTime: new Date(Number(item.EndTime.N)),
+                    };
+                  }else {
+                    // pending
+                    return {status: "PENDING", startTime: new Date(Number(item.StartTime.N))};
+                  }
+                }));
+                results.push(...res);
+              }
+              console.log({monitor, results});
+              return {monitor, results};
+            }));
+          }
+
+          exports.handler = async (event) => {
+            console.log(event);
+            const client = new DynamoDBClient();
+            if (event.scheduleTime && event.functionUrl) {
+              // called by schedule, send email
+              const endTime = new Date(event.scheduledTime);
+              const startTime = new Date(endTime.getTime() - process.env.ReportInterval * 1000 * 60 * 60 * 24);
+              console.log({endTime, startTime});
+              const monitorEvents = await getEvents(client)(startTime, endTime);
+            }else {
+              // called with token through Url, return HTML
+              const token = event.queryStringParameters.token;
+              if (!token) {
+                return {statusCode: 404};
+              }
+              const item = await client.send(new GetItemCommand({
+                TableName: process.env.ReportTokensTable,
+                Key: {
+                  RunID: {S: token},
+                },
+              }));
+              if (!item) {
+                return {statusCode: 404};
+              }
+              const startTime = Number(item.Item.StartTime.N);
+              const endTime = Number(item.Item.EndTime.N);
+              const monitorEvents = await getEvents(client)(startTime, endTime);
+              return {
+                statusCode: 200,
+                headers: {
+                  "Content-Type": "text/html",
+                },
+                body: `<html><body><pre>${JSON.stringify(monitorEvents, undefined, 4)}</pre></body></html>`,
+              };
+            }
+          };
+      LoggingConfig:
+        LogGroup: !Ref ReportingLambdaLogGroup
+        LogFormat: JSON
+      Environment:
+        Variables:
+          RunsTable: !GetAtt RunsTable.Arn
+          LogsTable: !GetAtt LogsTable.Arn
+          ReportTokensTable: !GetAtt ReportTokensTable.Arn
+          Monitors: !Ref Monitors
+          ReportInterval: !Ref ReportInterval
+          NotificationSNSTopicArn: !Ref NotificationSNSTopicArn
+  ReportingSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      FlexibleTimeWindow: 
+        Mode: "OFF"
+      ScheduleExpression: !Sub "rate(${ReportInterval} days)"
+      Target: 
+        Arn: !GetAtt ReportingLambdaFunction.Arn
+        Input: !Sub '{"scheduledTime": "<aws.scheduler.scheduled-time>", "functionUrl": "${ReportingLambdaUrl.FunctionUrl}"}'
+        RoleArn: !GetAtt ReportingScheduleRole.Arn
+  ReportingScheduleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - scheduler.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: permissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - 'lambda:InvokeFunction'
+              Resource: !GetAtt ReportingLambdaFunction.Arn
+  ReportingLambdaUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      TargetFunctionArn: !GetAtt ReportingLambdaFunction.Arn
+  ReportingLambdaUrlInvokePermission:
+     Type: AWS::Lambda::Permission
+     Properties:
+       FunctionName: !Ref ReportingLambdaFunction
+       FunctionUrlAuthType: 'NONE'
+       Action: lambda:InvokeFunctionUrl
+       Principal: '*'
 Outputs:
   CloudTrailSNSTopic:
     Value: !GetAtt CloudTrailSNSTopic.TopicArn
@@ -528,3 +921,5 @@ Outputs:
     Value: !Ref MonitoringUser
   ResticRepository:
     Value: !Sub "s3.dualstack.${AWS::Region}.amazonaws.com/${Bucket}"
+  Version:
+    Value: "<<VERSION_PLACEHOLDER>>"

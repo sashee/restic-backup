@@ -95,3 +95,6 @@ Resources:
       SourceArn:
         Fn::ImportValue:
           !Sub "${ManagementStackName}-CloudWatchLogGroupArn"
+Outputs:
+  Version:
+    Value: "<<VERSION_PLACEHOLDER>>"
