@@ -77,7 +77,7 @@ jobs:
         name: srcinfo
     - name: add version to templates
       run: |
-        export VERSION=$(cat ../SRCINFO | awk '$1 == "pkgver" {version = substr($0, index($0,"= ")+2)} $1 == "pkgrel" {rel = substr($0, index($0,"= ")+2)} END{print "Version: " version "-" rel}')
+        export VERSION=$(cat ../SRCINFO | awk '$1 == "pkgver" {version = substr($0, index($0,"= ")+2)} $1 == "pkgrel" {rel = substr($0, index($0,"= ")+2)} END{print version "-" rel}')
         echo $VERSION
         sed "s/<<VERSION_PLACEHOLDER>>/$VERSION/g" cloudformation.yml > ./target/cloudformation.yml
         sed "s/<<VERSION_PLACEHOLDER>>/$VERSION/g" mgmt-account.yml > ./target/mgmt-account.yml
