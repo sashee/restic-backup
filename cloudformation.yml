@@ -558,6 +558,10 @@ Resources:
               Resource: !Sub "${RunsTable.Arn}/index/ByMonitor"
             - Effect: Allow
               Action:
+              - 'dynamodb:PutItem'
+              Resource: !GetAtt ReportTokensTable.Arn
+            - Effect: Allow
+              Action:
               - 'sns:Publish'
               Resource: !Ref NotificationSNSTopicArn
   AlertingLambdaFunction:
@@ -570,7 +574,7 @@ Resources:
       Timeout: 30
       Code:
         ZipFile: |
-          const {DynamoDBClient, QueryCommand, paginateQuery} = require("@aws-sdk/client-dynamodb");
+          const {DynamoDBClient, QueryCommand, PutItem, paginateQuery} = require("@aws-sdk/client-dynamodb");
           const {SNSClient, PublishCommand} = require("@aws-sdk/client-sns");
 
           exports.handler = async (event) => {
@@ -602,9 +606,26 @@ Resources:
             const monitorErrors = monitorItems.filter(({items}) => !items.some((item) => item.Success.BOOL));
             if (monitorErrors.length > 0) {
               console.log(monitorErrors);
+
+              const token = crypto.randomUUID();
+              await client.send(new PutItemCommand({
+                TableName: process.env.ReportTokensTable,
+                Item: {
+                  Token: {S: token},
+                  StartTime: {N: String(startTime.getTime())},
+                  EndTime: {N: String(endTime.getTime())},
+                  ttl: {N: String(Math.round((new Date().getTime() + 365 * 24 * 60 * 60 * 1000) / 1000))},
+                },
+                ConditionExpression: "attribute_not_exists(#pk)",
+                ExpressionAttributeNames: {
+                  "#pk": "RunID",
+                },
+              }));
+              const reportingUrl = `${event.functionUrl}?token=${token}`;
+
               const snsClient = new SNSClient({region: process.env.NotificationSNSTopicArn.split(":")[3]});
               await snsClient.send(new PublishCommand({
-                Message: `Some monitors did not report success in the past ${process.env.AlertIfMissedEventsForDays} day(s): ${monitorErrors.map(({monitor}) => monitor)}`,
+                Message: `Some monitors did not report success in the past ${process.env.AlertIfMissedEventsForDays} day(s): ${monitorErrors.map(({monitor}) => monitor)}. Check the full report: ${reportingUrl}`,
                 TopicArn: process.env.NotificationSNSTopicArn,
               }));
             }
@@ -617,6 +638,7 @@ Resources:
           RunsTable: !GetAtt RunsTable.Arn
           Monitors: !Ref Monitors
           AlertIfMissedEventsForDays: !Ref AlertIfMissedEventsForDays
+          ReportTokensTable: !GetAtt ReportTokensTable.Arn
           NotificationSNSTopicArn: !Ref NotificationSNSTopicArn
   AlertingSchedule:
     Type: AWS::Scheduler::Schedule
@@ -719,7 +741,7 @@ Resources:
       Timeout: 30
       Code:
         ZipFile: |
-          const {DynamoDBClient, QueryCommand, paginateQuery, GetItemCommand} = require("@aws-sdk/client-dynamodb");
+          const {DynamoDBClient, QueryCommand, PutItemCommand, paginateQuery, GetItemCommand} = require("@aws-sdk/client-dynamodb");
           const {SNSClient, PublishCommand} = require("@aws-sdk/client-sns");
           const crypto = require("crypto");
           const zlib = require("node:zlib");
@@ -759,19 +781,71 @@ Resources:
                 },
               })) {
                 const res = await Promise.all(page.Items.map(async (item) => {
+                  const [
+                    version,
+                    versionError,
+                    unlock,
+                    unlockError,
+                    backup,
+                    backupError,
+                    forget,
+                    forgetError,
+                    prune,
+                    pruneError,
+                    check,
+                    checkError,
+                    snapshots,
+                    snapshotsError,
+                    stats,
+                    statsError,
+                  ] = await Promise.all([
+                    getLog(client)(item.InternalID.S, "version"),
+                    getLog(client)(item.InternalID.S, "version-error"),
+                    getLog(client)(item.InternalID.S, "unlock"),
+                    getLog(client)(item.InternalID.S, "unlock-error"),
+                    getLog(client)(item.InternalID.S, "backup"),
+                    getLog(client)(item.InternalID.S, "backup-error"),
+                    getLog(client)(item.InternalID.S, "forget"),
+                    getLog(client)(item.InternalID.S, "forget-error"),
+                    getLog(client)(item.InternalID.S, "prune"),
+                    getLog(client)(item.InternalID.S, "prune-error"),
+                    getLog(client)(item.InternalID.S, "check"),
+                    getLog(client)(item.InternalID.S, "check-error"),
+                    getLog(client)(item.InternalID.S, "snapshots"),
+                    getLog(client)(item.InternalID.S, "snapshots-error"),
+                    getLog(client)(item.InternalID.S, "stats"),
+                    getLog(client)(item.InternalID.S, "stats-error"),
+                  ]);
+
+                  const safeRun = (fn) => {
+                    try {
+                      return fn();
+                    }catch(e) {
+                      console.error(e);
+                    }
+                  };
+
+                  const rawLogs = {
+                    version: safeRun(() => JSON.parse(version)),
+                    "version-error": safeRun(() => JSON.parse(versionError)),
+                    unlock: safeRun(() => JSON.parse(unlock)),
+                    "unlock-error": safeRun(() => JSON.parse(unlockError)),
+                    backup: safeRun(() => JSON.parse(backup)),
+                    "backup-error": safeRun(() => JSON.parse(backupError)),
+                    forget: safeRun(() => JSON.parse(forget)),
+                    "forget-error": safeRun(() => JSON.parse(forgetError)),
+                    prune: safeRun(() => JSON.parse(prune)),
+                    "prune-error": safeRun(() => JSON.parse(pruneError)),
+                    check: safeRun(() => JSON.parse(check)),
+                    "check-error": safeRun(() => JSON.parse(checkError)),
+                    snapshots: safeRun(() => JSON.parse(snapshots)),
+                    "snapshots-error": safeRun(() => JSON.parse(snapshotsError)),
+                    stats: safeRun(() => JSON.parse(stats)),
+                    "stats-error": safeRun(() => JSON.parse(statsError)),
+                  };
+                  const anyErrors = versionError || unlockError || backupError || forgetError || pruneError || checkError || snapshotsError || statsError;
                   if (item.Success?.BOOL) {
                     // success
-                    const [version, backup] = await Promise.all([
-                      getLog(client)(item.InternalID.S, "version"),
-                      getLog(client)(item.InternalID.S, "backup"),
-                    ]);
-                    const safeRun = (fn) => {
-                      try {
-                        return fn();
-                      }catch(e) {
-                        console.error(e);
-                      }
-                    }
                     const versionString = safeRun(() => {
                       if (version) {
                         const versionJson = JSON.parse(version);
@@ -780,18 +854,21 @@ Resources:
                     });
                     const backupStats = safeRun(() => {
                       if (backup) {
-                        const backupJson = JSON.parse(backup);
+                        const statsJson = JSON.parse(stats);
                         return {
-                          total_bytes_processed: backupJson.stdout.total_bytes_processed,
-                          total_files_processed: backupJson.stdout.total_files_processed,
+                          total_size: statsJson.stdout.total_size,
+                          total_file_count: statsJson.stdout.total_file_count,
                         }
                       }
                     });
                     return {
                       status: "SUCCESS",
                       startTime: new Date(Number(item.StartTime.N)),
+                      endTime: new Date(Number(item.EndTime.N)),
                       versionString,
                       backupStats,
+                      anyErrors,
+                      rawLogs,
                     };
                   }else if (item.Success){
                     // failed
@@ -799,10 +876,16 @@ Resources:
                       status: "FAILED",
                       startTime: new Date(Number(item.StartTime.N)),
                       endTime: new Date(Number(item.EndTime.N)),
+                      rawLogs,
                     };
                   }else {
                     // pending
-                    return {status: "PENDING", startTime: new Date(Number(item.StartTime.N))};
+                    return {
+                      status: "PENDING",
+                      startTime: new Date(Number(item.StartTime.N)),
+                      anyErrors,
+                      rawLogs,
+                    };
                   }
                 }));
                 results.push(...res);
@@ -815,36 +898,83 @@ Resources:
           exports.handler = async (event) => {
             console.log(event);
             const client = new DynamoDBClient();
-            if (event.scheduleTime && event.functionUrl) {
+            if (event.scheduledTime && event.functionUrl) {
               // called by schedule, send email
               const endTime = new Date(event.scheduledTime);
               const startTime = new Date(endTime.getTime() - process.env.ReportInterval * 1000 * 60 * 60 * 24);
               console.log({endTime, startTime});
               const monitorEvents = await getEvents(client)(startTime, endTime);
+              const token = crypto.randomUUID();
+              await client.send(new PutItemCommand({
+                TableName: process.env.ReportTokensTable,
+                Item: {
+                  Token: {S: token},
+                  StartTime: {N: String(startTime.getTime())},
+                  EndTime: {N: String(endTime.getTime())},
+                  ttl: {N: String(Math.round((new Date().getTime() + 365 * 24 * 60 * 60 * 1000) / 1000))},
+                },
+                ConditionExpression: "attribute_not_exists(#pk)",
+                ExpressionAttributeNames: {
+                  "#pk": "RunID",
+                },
+              }));
+              const reportingUrl = `${event.functionUrl}?token=${token}`;
+              await client.send(new PublishCommand({
+                Message: `Report ready. Check the full report: ${reportingUrl}`,
+                TopicArn: process.env.NotificationSNSTopicArn,
+              }));
             }else {
               // called with token through Url, return HTML
-              const token = event.queryStringParameters.token;
+              const token = event.queryStringParameters?.token;
               if (!token) {
                 return {statusCode: 404};
               }
               const item = await client.send(new GetItemCommand({
                 TableName: process.env.ReportTokensTable,
                 Key: {
-                  RunID: {S: token},
+                  Token: {S: token},
                 },
               }));
               if (!item) {
                 return {statusCode: 404};
               }
-              const startTime = Number(item.Item.StartTime.N);
-              const endTime = Number(item.Item.EndTime.N);
+              const startTime = new Date(Number(item.Item.StartTime.N));
+              const endTime = new Date(Number(item.Item.EndTime.N));
               const monitorEvents = await getEvents(client)(startTime, endTime);
+              const encodeResponse = async (body) => {
+                const acceptEncoding = event.headers["accept-encoding"];
+                if (acceptEncoding && acceptEncoding.split(",").some((v) => v.split(";")[0].trim() === "br")) {
+                  const bodyBuffer = Buffer.from(body, "utf8");
+                  const compressedBody = await promisify(zlib.brotliCompress)(bodyBuffer, {params: {
+                    [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT,
+                    [zlib.constants.BROTLI_PARAM_QUALITY]: zlib.constants.BROTLI_MAX_QUALITY,
+                    [zlib.constants.BROTLI_PARAM_SIZE_HINT]: bodyBuffer.length,
+                  }});
+                  return {
+                    headers: {
+                      "Content-Encoding": "br",
+                    },
+                    isBase64Encoded: true,
+                    body: compressedBody.toString("base64"),
+                  };
+                }else {
+                  return {
+                    headers: {},
+                    isBase64Encoded: false,
+                    body,
+                  }
+                }
+              };
+              const body = `<html><body><pre>${JSON.stringify(monitorEvents, undefined, 4)}</pre></body></html>`;
+              const encodedResponse = await encodeResponse(body);
               return {
                 statusCode: 200,
                 headers: {
+                  ...encodedResponse.headers,
                   "Content-Type": "text/html",
                 },
-                body: `<html><body><pre>${JSON.stringify(monitorEvents, undefined, 4)}</pre></body></html>`,
+                isBase64Encoded: encodedResponse.isBase64Encoded,
+                body: encodedResponse.body,
               };
             }
           };
