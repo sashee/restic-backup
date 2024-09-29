@@ -919,7 +919,8 @@ Resources:
                 },
               }));
               const reportingUrl = `${event.functionUrl}?token=${token}`;
-              await client.send(new PublishCommand({
+              const snsClient = new SNSClient({region: process.env.NotificationSNSTopicArn.split(":")[3]});
+              await snsClient.send(new PublishCommand({
                 Message: `Report ready. Check the full report: ${reportingUrl}`,
                 TopicArn: process.env.NotificationSNSTopicArn,
               }));
